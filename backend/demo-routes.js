@@ -6,6 +6,9 @@ const MONAD_CONFIG = require("./config/monad");
 
 const router = express.Router();
 
+// Small delay helper for visual SSE pacing
+const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+
 // ---------------------------------------------------------------------------
 // SSE client tracking
 // ---------------------------------------------------------------------------
@@ -81,6 +84,8 @@ router.post("/api/demo/run-x402", async (req, res) => {
     } = req.body || {};
 
     // --- Step 1: request — hit the mock resource, get 402 ----------------
+    broadcastDemoEvent({ step: "request", status: "running" });
+    await wait(600);
     let t0 = Date.now();
     const paywall = {
       paymentRequired: true,
@@ -89,59 +94,34 @@ router.post("/api/demo/run-x402", async (req, res) => {
       recipient: vendorAddress,
       resource: "premium-financial-data",
     };
-    timings.request = Date.now() - t0;
-    steps.push({
-      name: "request",
-      status: "402_received",
-      detail: paywall,
-      timing: timings.request,
-    });
-    broadcastDemoEvent({
-      step: "request",
-      status: "402_received",
-      detail: paywall,
-      timing: timings.request,
-    });
+    timings.request = Date.now() - t0 + 600;
+    steps.push({ name: "request", status: "402_received", detail: paywall, timing: timings.request });
+    broadcastDemoEvent({ step: "request", status: "402_received", detail: paywall, timing: timings.request });
+
+    // --- Step 1b: 402 received — show 402 status -------------------------
+    broadcastDemoEvent({ step: "402", status: "running" });
+    await wait(400);
+    broadcastDemoEvent({ step: "402", status: "402_received", timing: 400 });
 
     // --- Step 2: compliance — run compliance engine check -----------------
+    broadcastDemoEvent({ step: "compliance", status: "running" });
+    await wait(300);
     t0 = Date.now();
     const complianceResult = await checkCompliance(agentIndex, vendorAddress, amount);
-    timings.compliance = Date.now() - t0;
+    timings.compliance = Date.now() - t0 + 300;
 
     if (!complianceResult.compliant) {
-      steps.push({
-        name: "compliance",
-        status: "failed",
-        detail: complianceResult,
-        timing: timings.compliance,
-      });
-      broadcastDemoEvent({
-        step: "compliance",
-        status: "failed",
-        detail: complianceResult,
-        timing: timings.compliance,
-      });
-      return res.json({
-        success: false,
-        failedAt: "compliance",
-        errors: complianceResult.errors,
-      });
+      steps.push({ name: "compliance", status: "failed", detail: complianceResult, timing: timings.compliance });
+      broadcastDemoEvent({ step: "compliance", status: "failed", detail: complianceResult, timing: timings.compliance });
+      return res.json({ success: false, failedAt: "compliance", errors: complianceResult.errors });
     }
 
-    steps.push({
-      name: "compliance",
-      status: "passed",
-      detail: complianceResult,
-      timing: timings.compliance,
-    });
-    broadcastDemoEvent({
-      step: "compliance",
-      status: "passed",
-      detail: complianceResult,
-      timing: timings.compliance,
-    });
+    steps.push({ name: "compliance", status: "passed", detail: complianceResult, timing: timings.compliance });
+    broadcastDemoEvent({ step: "compliance", status: "passed", detail: complianceResult, timing: timings.compliance });
 
     // --- Step 3: zk-stamp — generate proof hash --------------------------
+    broadcastDemoEvent({ step: "zk-stamp", status: "running" });
+    await wait(800);
     t0 = Date.now();
     const proofHash = ethers.keccak256(
       ethers.AbiCoder.defaultAbiCoder().encode(
@@ -149,79 +129,45 @@ router.post("/api/demo/run-x402", async (req, res) => {
         [agentIndex, vendorAddress, BigInt(amount), BigInt(Date.now())]
       )
     );
-    timings.zkStamp = Date.now() - t0;
-    steps.push({
-      name: "zk-stamp",
-      status: "proof_generated",
-      detail: { proofHash },
-      timing: timings.zkStamp,
-    });
-    broadcastDemoEvent({
-      step: "zk-stamp",
-      status: "proof_generated",
-      detail: { proofHash },
-      timing: timings.zkStamp,
-    });
+    timings.zkStamp = Date.now() - t0 + 800;
+    steps.push({ name: "zk-stamp", status: "proof_generated", detail: { proofHash }, timing: timings.zkStamp });
+    broadcastDemoEvent({ step: "zk-stamp", status: "proof_generated", detail: { proofHash }, timing: timings.zkStamp });
 
     // --- Step 4: settlement — process payment via compliance engine -------
+    broadcastDemoEvent({ step: "settlement", status: "running" });
+    await wait(300);
     t0 = Date.now();
     const paymentResult = await processAgentPayment(agentIndex, vendorAddress, amount);
-    timings.settlement = Date.now() - t0;
+    timings.settlement = Date.now() - t0 + 300;
     steps.push({
       name: "settlement",
       status: paymentResult.success ? "settled" : "failed",
-      detail: {
-        txHash: paymentResult.txHash,
-        stampTxHash: paymentResult.stampTxHash,
-        proofHash: paymentResult.proofHash,
-      },
+      detail: { txHash: paymentResult.txHash, stampTxHash: paymentResult.stampTxHash, proofHash: paymentResult.proofHash },
       timing: timings.settlement,
     });
     broadcastDemoEvent({
       step: "settlement",
       status: paymentResult.success ? "settled" : "failed",
-      detail: {
-        txHash: paymentResult.txHash,
-        stampTxHash: paymentResult.stampTxHash,
-      },
+      detail: { txHash: paymentResult.txHash, stampTxHash: paymentResult.stampTxHash },
       timing: timings.settlement,
     });
 
     // --- Step 5: delivery — retry with payment receipt header -------------
+    broadcastDemoEvent({ step: "delivery", status: "running" });
+    await wait(400);
     t0 = Date.now();
     const resourceData = {
-      data: {
-        AAPL: 185.32,
-        NVDA: 892.10,
-        MSFT: 412.85,
-        GOOG: 172.45,
-        AMZN: 198.70,
-      },
+      data: { AAPL: 185.32, NVDA: 892.10, MSFT: 412.85, GOOG: 172.45, AMZN: 198.70 },
       source: "PremiumFinancialData API",
       timestamp: new Date().toISOString(),
       receiptVerified: true,
     };
-    timings.delivery = Date.now() - t0;
-    steps.push({
-      name: "delivery",
-      status: "200_ok",
-      detail: { resourceKeys: Object.keys(resourceData.data) },
-      timing: timings.delivery,
-    });
-    broadcastDemoEvent({
-      step: "delivery",
-      status: "200_ok",
-      detail: { resourceKeys: Object.keys(resourceData.data) },
-      timing: timings.delivery,
-    });
+    timings.delivery = Date.now() - t0 + 400;
+    steps.push({ name: "delivery", status: "200_ok", detail: { resourceKeys: Object.keys(resourceData.data) }, timing: timings.delivery });
+    broadcastDemoEvent({ step: "delivery", status: "200_ok", detail: { resourceKeys: Object.keys(resourceData.data) }, timing: timings.delivery });
 
     // --- Compose response -----------------------------------------------
-    timings.total =
-      timings.request +
-      timings.compliance +
-      timings.zkStamp +
-      timings.settlement +
-      timings.delivery;
+    timings.total = timings.request + timings.compliance + timings.zkStamp + timings.settlement + timings.delivery;
 
     return res.json({
       success: true,
@@ -254,6 +200,8 @@ router.post("/api/demo/run-affiliate", async (req, res) => {
     const buyerAddress = "0xBuyer000000000000000000000000000000000C";
 
     // --- Step 1: buyer payment check ------------------------------------
+    broadcastDemoEvent({ step: "buyer-payment-check", status: "running" });
+    await wait(500);
     let t0 = Date.now();
     const buyerPayment = {
       buyer: buyerAddress,
@@ -261,70 +209,36 @@ router.post("/api/demo/run-affiliate", async (req, res) => {
       token: "USDC",
       status: "received",
     };
-    timings.buyerPayment = Date.now() - t0;
-    steps.push({
-      name: "buyer-payment-check",
-      status: "received",
-      detail: buyerPayment,
-      timing: timings.buyerPayment,
-    });
-    broadcastDemoEvent({
-      step: "buyer-payment-check",
-      status: "received",
-      detail: buyerPayment,
-      timing: timings.buyerPayment,
-    });
+    timings.buyerPayment = Date.now() - t0 + 500;
+    steps.push({ name: "buyer-payment-check", status: "received", detail: buyerPayment, timing: timings.buyerPayment });
+    broadcastDemoEvent({ step: "buyer-payment-check", status: "received", detail: buyerPayment, timing: timings.buyerPayment });
 
     // --- Step 2: compliance verification --------------------------------
+    broadcastDemoEvent({ step: "compliance-verification", status: "running" });
+    await wait(300);
     t0 = Date.now();
     const complianceResult = await checkCompliance(0, merchantAddress, totalAmount);
-    timings.compliance = Date.now() - t0;
-    steps.push({
-      name: "compliance-verification",
-      status: complianceResult.compliant ? "passed" : "failed",
-      detail: complianceResult,
-      timing: timings.compliance,
-    });
-    broadcastDemoEvent({
-      step: "compliance-verification",
-      status: complianceResult.compliant ? "passed" : "failed",
-      detail: complianceResult,
-      timing: timings.compliance,
-    });
+    timings.compliance = Date.now() - t0 + 300;
+    steps.push({ name: "compliance-verification", status: complianceResult.compliant ? "passed" : "failed", detail: complianceResult, timing: timings.compliance });
+    broadcastDemoEvent({ step: "compliance-verification", status: complianceResult.compliant ? "passed" : "failed", detail: complianceResult, timing: timings.compliance });
 
     // --- Step 3: ZK commission proof ------------------------------------
+    broadcastDemoEvent({ step: "zk-commission-proof", status: "running" });
+    await wait(800);
     t0 = Date.now();
     const commissionProofHash = ethers.keccak256(
       ethers.AbiCoder.defaultAbiCoder().encode(
         ["address", "address", "uint256", "uint256", "uint256"],
-        [
-          affiliateAddress,
-          merchantAddress,
-          BigInt(affiliateShare),
-          BigInt(merchantShare),
-          BigInt(Date.now()),
-        ]
+        [affiliateAddress, merchantAddress, BigInt(affiliateShare), BigInt(merchantShare), BigInt(Date.now())]
       )
     );
-    timings.zkCommissionProof = Date.now() - t0;
-    steps.push({
-      name: "zk-commission-proof",
-      status: "proof_generated",
-      detail: {
-        proofHash: commissionProofHash,
-        affiliatePercent: "15%",
-        merchantPercent: "85%",
-      },
-      timing: timings.zkCommissionProof,
-    });
-    broadcastDemoEvent({
-      step: "zk-commission-proof",
-      status: "proof_generated",
-      detail: { proofHash: commissionProofHash },
-      timing: timings.zkCommissionProof,
-    });
+    timings.zkCommissionProof = Date.now() - t0 + 800;
+    steps.push({ name: "zk-commission-proof", status: "proof_generated", detail: { proofHash: commissionProofHash, affiliatePercent: "15%", merchantPercent: "85%" }, timing: timings.zkCommissionProof });
+    broadcastDemoEvent({ step: "zk-commission-proof", status: "proof_generated", detail: { proofHash: commissionProofHash }, timing: timings.zkCommissionProof });
 
     // --- Step 4: affiliate payment --------------------------------------
+    broadcastDemoEvent({ step: "affiliate-payment", status: "running" });
+    await wait(500);
     t0 = Date.now();
     const affiliateProofHash = ethers.keccak256(
       ethers.AbiCoder.defaultAbiCoder().encode(
@@ -332,28 +246,14 @@ router.post("/api/demo/run-affiliate", async (req, res) => {
         ["affiliate-payout", affiliateAddress, BigInt(affiliateShare), BigInt(Date.now())]
       )
     );
-    const affiliateTxHash =
-      "0x" + Buffer.from(`affiliate-tx-${Date.now()}`).toString("hex").padEnd(64, "0");
-    timings.affiliatePayment = Date.now() - t0;
-    steps.push({
-      name: "affiliate-payment",
-      status: "sent",
-      detail: {
-        to: affiliateAddress,
-        amount: affiliateShare.toString(),
-        proofHash: affiliateProofHash,
-        txHash: affiliateTxHash,
-      },
-      timing: timings.affiliatePayment,
-    });
-    broadcastDemoEvent({
-      step: "affiliate-payment",
-      status: "sent",
-      detail: { amount: affiliateShare.toString(), txHash: affiliateTxHash },
-      timing: timings.affiliatePayment,
-    });
+    const affiliateTxHash = "0x" + Buffer.from(`affiliate-tx-${Date.now()}`).toString("hex").padEnd(64, "0");
+    timings.affiliatePayment = Date.now() - t0 + 500;
+    steps.push({ name: "affiliate-payment", status: "sent", detail: { to: affiliateAddress, amount: affiliateShare.toString(), proofHash: affiliateProofHash, txHash: affiliateTxHash }, timing: timings.affiliatePayment });
+    broadcastDemoEvent({ step: "affiliate-payment", status: "sent", detail: { amount: affiliateShare.toString(), txHash: affiliateTxHash }, timing: timings.affiliatePayment });
 
     // --- Step 5: merchant payment ---------------------------------------
+    broadcastDemoEvent({ step: "merchant-payment", status: "running" });
+    await wait(500);
     t0 = Date.now();
     const merchantProofHash = ethers.keccak256(
       ethers.AbiCoder.defaultAbiCoder().encode(
@@ -361,28 +261,14 @@ router.post("/api/demo/run-affiliate", async (req, res) => {
         ["merchant-payout", merchantAddress, BigInt(merchantShare), BigInt(Date.now())]
       )
     );
-    const merchantTxHash =
-      "0x" + Buffer.from(`merchant-tx-${Date.now()}`).toString("hex").padEnd(64, "0");
-    timings.merchantPayment = Date.now() - t0;
-    steps.push({
-      name: "merchant-payment",
-      status: "sent",
-      detail: {
-        to: merchantAddress,
-        amount: merchantShare.toString(),
-        proofHash: merchantProofHash,
-        txHash: merchantTxHash,
-      },
-      timing: timings.merchantPayment,
-    });
-    broadcastDemoEvent({
-      step: "merchant-payment",
-      status: "sent",
-      detail: { amount: merchantShare.toString(), txHash: merchantTxHash },
-      timing: timings.merchantPayment,
-    });
+    const merchantTxHash = "0x" + Buffer.from(`merchant-tx-${Date.now()}`).toString("hex").padEnd(64, "0");
+    timings.merchantPayment = Date.now() - t0 + 500;
+    steps.push({ name: "merchant-payment", status: "sent", detail: { to: merchantAddress, amount: merchantShare.toString(), proofHash: merchantProofHash, txHash: merchantTxHash }, timing: timings.merchantPayment });
+    broadcastDemoEvent({ step: "merchant-payment", status: "sent", detail: { amount: merchantShare.toString(), txHash: merchantTxHash }, timing: timings.merchantPayment });
 
     // --- Step 6: settlement complete ------------------------------------
+    broadcastDemoEvent({ step: "settlement-complete", status: "running" });
+    await wait(400);
     t0 = Date.now();
     const settlementProofHash = ethers.keccak256(
       ethers.AbiCoder.defaultAbiCoder().encode(
@@ -390,24 +276,9 @@ router.post("/api/demo/run-affiliate", async (req, res) => {
         [commissionProofHash, affiliateProofHash, merchantProofHash, BigInt(Date.now())]
       )
     );
-    timings.settlementComplete = Date.now() - t0;
-    steps.push({
-      name: "settlement-complete",
-      status: "finalized",
-      detail: {
-        settlementProofHash,
-        totalAmount: totalAmount.toString(),
-        affiliateAmount: affiliateShare.toString(),
-        merchantAmount: merchantShare.toString(),
-      },
-      timing: timings.settlementComplete,
-    });
-    broadcastDemoEvent({
-      step: "settlement-complete",
-      status: "finalized",
-      detail: { settlementProofHash },
-      timing: timings.settlementComplete,
-    });
+    timings.settlementComplete = Date.now() - t0 + 400;
+    steps.push({ name: "settlement-complete", status: "finalized", detail: { settlementProofHash, totalAmount: totalAmount.toString(), affiliateAmount: affiliateShare.toString(), merchantAmount: merchantShare.toString() }, timing: timings.settlementComplete });
+    broadcastDemoEvent({ step: "settlement-complete", status: "finalized", detail: { settlementProofHash }, timing: timings.settlementComplete });
 
     // --- Compose response -----------------------------------------------
     timings.total =
@@ -421,6 +292,8 @@ router.post("/api/demo/run-affiliate", async (req, res) => {
     return res.json({
       success: true,
       steps,
+      txHash: merchantTxHash,
+      proofHash: settlementProofHash,
       commissionProofHash,
       affiliateTxHash,
       merchantTxHash,

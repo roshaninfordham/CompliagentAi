@@ -162,13 +162,19 @@ const x402StepMap: Record<string, string> = {
 
 const affiliateStepMap: Record<string, string> = {
   "buyer-pay": "buyer-pay",
+  "buyer-payment-check": "buyer-pay",
   "compliance-check": "compliance-check",
+  "compliance-verification": "compliance-check",
   "compliance": "compliance-check",
   "zk-split": "zk-split",
+  "zk-commission-proof": "zk-split",
   "zk-stamp": "zk-split",
   "affiliate-pay": "affiliate-pay",
+  "affiliate-payment": "affiliate-pay",
   "merchant-pay": "merchant-pay",
+  "merchant-payment": "merchant-pay",
   settlement: "merchant-pay",
+  "settlement-complete": "verified",
   verified: "verified",
   delivery: "verified",
 };
@@ -322,7 +328,19 @@ export function AgentDemo() {
 
       try {
         const data: SSEEvent = JSON.parse(event.data);
+        if (data.step === "connected") return; // ignore initial SSE handshake
         const mappedStepId = stepMap[data.step] || data.step;
+
+        // Map backend statuses to UI statuses
+        // Backend sends domain statuses like "passed", "402_received", "proof_generated", etc.
+        // "failed" or "error" → error, "running" → running, everything else → success
+        const failStatuses = new Set(["failed", "error"]);
+        const uiStatus: "running" | "success" | "error" =
+          data.status === "running"
+            ? "running"
+            : failStatuses.has(data.status)
+            ? "error"
+            : "success";
 
         setSteps((prev) => {
           const stepIndex = prev.findIndex((s) => s.id === mappedStepId);
@@ -331,12 +349,12 @@ export function AgentDemo() {
           const updated = [...prev];
           updated[stepIndex] = {
             ...updated[stepIndex],
-            status: data.status === "running" ? "running" : data.status === "success" ? "success" : "error",
+            status: uiStatus,
             detail: data.detail,
           };
 
           // If a step is now running, set it as current
-          if (data.status === "running") {
+          if (uiStatus === "running") {
             setCurrentStep(stepIndex);
           }
 
@@ -344,23 +362,24 @@ export function AgentDemo() {
         });
 
         // Update data flow nodes based on step progress
-        if (data.status === "success") {
-          if (data.step === "request" || data.step === "buyer-pay") {
+        if (uiStatus === "success") {
+          const stepName = data.step;
+          if (stepName === "request" || stepName === "buyer-pay" || stepName === "buyer-payment-check") {
             setDataFlowNodes((prev) => ({ ...prev, wallet: true }));
           }
-          if (data.step === "compliance" || data.step === "compliance-check") {
+          if (stepName === "compliance" || stepName === "compliance-check" || stepName === "compliance-verification") {
             setDataFlowNodes((prev) => ({ ...prev, engine: true }));
           }
-          if (data.step === "zk-stamp" || data.step === "zk-split") {
+          if (stepName === "zk-stamp" || stepName === "zk-split" || stepName === "zk-commission-proof") {
             setDataFlowNodes((prev) => ({ ...prev, privacy: true }));
           }
-          if (data.step === "settlement" || data.step === "merchant-pay" || data.step === "delivery" || data.step === "verified") {
+          if (stepName === "settlement" || stepName === "merchant-pay" || stepName === "merchant-payment" || stepName === "delivery" || stepName === "verified" || stepName === "settlement-complete") {
             setDataFlowNodes((prev) => ({ ...prev, block: true }));
           }
         }
 
         // Record timing from SSE
-        if (data.status === "success" && data.timing != null) {
+        if (uiStatus === "success" && data.timing != null) {
           setStepTimings((prev) => {
             // Avoid duplicates
             if (prev.some((t) => t.step === mappedStepId)) return prev;
@@ -413,7 +432,7 @@ export function AgentDemo() {
       if (result.txHash) setTxHash(result.txHash);
       if (result.proofHash) setProofHash(result.proofHash);
       if (result.blockNumber) setBlockNumber(result.blockNumber);
-      if (result.timings) setStepTimings(result.timings);
+      // Note: step timings are populated via SSE events, no need to override here
 
       // Ensure all steps show success
       setSteps((prev) =>
