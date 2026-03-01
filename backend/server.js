@@ -127,7 +127,8 @@ async function start() {
   console.log(`Monad Testnet: ${monadStatus.connected ? "connected" : "DISCONNECTED"} | Chain ${monadStatus.chainId} | Block #${monadStatus.blockNumber} | ${monadStatus.latency}ms`);
   const walletBalance = await getBalance(MONAD_CONFIG.walletAddress);
   console.log(`Wallet ${MONAD_CONFIG.walletAddress}: ${walletBalance} MON`);
-  app.listen(3001, () => console.log("CompliAgent backend running on :3001"));
+  const port = process.env.PORT || 3001;
+  app.listen(port, () => console.log(`CompliAgent backend running on port ${port}`));
 }
 
 start();
