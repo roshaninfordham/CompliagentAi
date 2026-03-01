@@ -1,7 +1,8 @@
 // Monad Testnet Configuration
 const MONAD_CONFIG = {
   chainId: 10143,
-  rpcUrl: "https://testnet-rpc.monad.xyz",
+  rpcUrl: process.env.MONAD_RPC_URL || "https://testnet-rpc.monad.xyz",
+  wsUrl: process.env.MONAD_WS_URL || "wss://monad-testnet.blockvision.org/v1/3ALilKEpxGmrGJcdsIzhU83Az66",
   explorerUrl: "https://testnet.monadexplorer.com",
   blockTime: 400,   // ~400ms
   finality: 800,    // ~800ms

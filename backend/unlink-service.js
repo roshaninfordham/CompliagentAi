@@ -19,7 +19,7 @@ async function getUnlink() {
           chain: "monad-testnet",
           storage: createSqliteStorage({ path: "./wallet.db" }),
           setup: true,   // auto-creates seed + first account
-          sync: false,    // disable background sync (prevents gateway RPC retry spam)
+          sync: true,    // fetch any historical shielded deposits
           autoSync: false,
         });
 

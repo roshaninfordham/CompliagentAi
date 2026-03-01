@@ -192,7 +192,7 @@ CompliagentAi/
 │   │       ├── ComplianceRules.tsx ← Rule editor (budget, vendor, AML)
 │   │       ├── AuditReports.tsx    ← ZK proof viewer & report cards
 │   │       ├── TransactionFeed.tsx ← Live tx feed with privacy badges
-│   │       ├── AgentDemo.tsx       ← Interactive demo simulator
+│   │       ├── AgentDemo.tsx       ← Live demo with real on-chain Monad txs
 │   │       ├── mock-data.ts        ← TypeScript interfaces + sample data
 │   │       └── ui/                 ← 48 shadcn/ui primitives (Radix-based)
 │   └── styles/
@@ -214,6 +214,7 @@ CompliagentAi/
 │   │   ├── agents.js               ← POST /create, GET /:index/balance
 │   │   ├── funding.js              ← POST /fund-agent, POST /sweep-back
 │   │   └── payments.js             ← POST /agent-pay
+│   ├── demo-routes.js              ← Live demo SSE endpoints (real on-chain)
 │   └── scripts/
 │       └── create-agent-wallets.js ← Generate 8 agent wallets
 │
@@ -557,6 +558,58 @@ cd contracts
 # Run Phase 2 interactions (allocate budget, pay vendor, stamp)
 npx hardhat run scripts/phase2-interactions.js --network monad-testnet --config hardhat.config.cjs
 ```
+
+---
+
+## 🎬 Live Demo (Real On-Chain Transactions)
+
+The **Live Demo** page (`/dashboard/demo`) runs real compliance flows with **actual on-chain transactions on Monad Testnet** — judges can click transaction hashes to verify them on the explorer.
+
+### Flow 1: x402 Agent Data Purchase (~7 seconds)
+
+| Step | What Happens | Technology | Real? |
+|------|-------------|-----------|-------|
+| 1. Agent HTTP Request | AI agent requests premium data from paywalled API | CompliAgent Engine | Simulated API call |
+| 2. HTTP 402 Payment Required | API responds with x402 payment requirements | x402 Protocol | Simulated |
+| 3. Compliance Check | Validates budget, vendor allowlist, AML | CompliAgent Compliance Engine | ✅ Real rules evaluation |
+| 4. ZK Compliance Stamp | Generates ZK proof hash via Unlink SDK | Unlink SDK (Privacy Layer) | ✅ Real keccak256 proof |
+| 5. Monad Settlement | Stamps proof on ComplianceRegistry contract | Monad Testnet (~400ms finality) | ✅ **REAL on-chain tx** |
+| 6. Resource Delivered | Agent retries with receipt, data delivered | x402 Protocol | Simulated |
+
+### Flow 2: Affiliate Commission Settlement (~12 seconds)
+
+| Step | What Happens | Technology | Real? |
+|------|-------------|-----------|-------|
+| 1. Buyer Payment | Buyer pays $100 USDC via x402 | x402 Protocol | Simulated |
+| 2. Compliance Verification | Validates 3 parties + commission structure | CompliAgent Compliance Engine | ✅ Real rules check |
+| 3. ZK Commission Proof | Proves x + y = z (split) without revealing amounts | Unlink SDK (ZK Proofs) | ✅ Real keccak256 proof |
+| 4. Affiliate Payment (15%) | Shielded transfer stamped on-chain | Unlink Privacy Pool → Monad | ✅ **REAL on-chain tx** |
+| 5. Merchant Payment (85%) | Shielded transfer stamped on-chain | Unlink Privacy Pool → Monad | ✅ **REAL on-chain tx** |
+| 6. Settlement Complete | All parties paid, combined ZK proof | Monad Block Finality | ✅ Real proof hash |
+
+### Verifying Transactions
+
+After any demo run, click **"Verify Transaction on Monad Explorer →"** to see the real transaction:
+- Block confirmations
+- Contract interaction with `ComplianceRegistry` at `0xC37a8f0ca860914BfAce8361Bf0621EAEa14863F`
+- Gas fees paid on Monad Testnet
+
+### How the Demo Works (Backend)
+
+The demo backend (`backend/demo-routes.js`) uses **Server-Sent Events (SSE)** to stream real-time step updates:
+
+```bash
+# SSE endpoint for real-time updates
+GET  /api/demo/events
+
+# Run x402 demo (creates real Monad tx)
+POST /api/demo/run-x402
+
+# Run affiliate demo (creates 2 real Monad txs)
+POST /api/demo/run-affiliate
+```
+
+Each settlement step calls `ComplianceRegistry.verifyAndStamp()` on Monad Testnet using the deployer wallet, producing a real transaction hash and block number.
 
 ---
 

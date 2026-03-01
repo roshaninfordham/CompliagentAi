@@ -43,7 +43,7 @@ export function useMonadContracts() {
     return providerRef.current;
   }, []);
 
-  // ── Step 13: Listen for ComplianceStamped events ────────────────
+  // ── Step 13: Listen for ComplianceStamped events (Polled) ───────
   useEffect(() => {
     const provider = getProvider();
     const registry = new ethers.Contract(
@@ -52,32 +52,51 @@ export function useMonadContracts() {
       provider
     );
 
-    const onComplianceStamped = (
-      txHash,
-      proofHash,
-      timestamp,
-      event
-    ) => {
-      setComplianceEvents((prev) => [
-        {
-          txHash,
-          proofHash,
-          timestamp: Number(timestamp),
-          blockNumber: event.blockNumber,
-        },
-        ...prev.slice(0, 49), // keep last 50
-      ]);
+    let lastBlockChecked = -1;
+    let isMounted = true;
+
+    const poll = async () => {
+      if (!isMounted) return;
+      try {
+        const currentBlock = await provider.getBlockNumber();
+        if (lastBlockChecked === -1) {
+          lastBlockChecked = currentBlock > 50 ? currentBlock - 50 : 0;
+        }
+        if (currentBlock > lastBlockChecked) {
+          const logs = await registry.queryFilter("ComplianceStamped", lastBlockChecked + 1, currentBlock);
+          if (logs.length > 0 && isMounted) {
+            const newEvents = logs.map(log => ({
+              txHash: log.args[0],
+              proofHash: log.args[1],
+              timestamp: Number(log.args[2]),
+              blockNumber: log.blockNumber,
+            })).reverse();
+            
+            setComplianceEvents(prev => {
+              const merged = [...newEvents, ...prev];
+              // Remove duplicates based on txHash
+              const unique = Array.from(new Map(merged.map(item => [item.txHash, item])).values());
+              return unique.slice(0, 50);
+            });
+          }
+          lastBlockChecked = currentBlock;
+        }
+      } catch (err) {
+        console.error("Compliance poll error:", err);
+      }
     };
 
-    registry.on("ComplianceStamped", onComplianceStamped);
+    poll();
+    const interval = setInterval(poll, 4000);
     setConnected(true);
 
     return () => {
-      registry.off("ComplianceStamped", onComplianceStamped);
+      isMounted = false;
+      clearInterval(interval);
     };
   }, [getProvider]);
 
-  // ── Step 14: Listen for Budget events ───────────────────────────
+  // ── Step 14: Listen for Budget events (Polled) ──────────────────
   useEffect(() => {
     const provider = getProvider();
     const vault = new ethers.Contract(
@@ -86,61 +105,58 @@ export function useMonadContracts() {
       provider
     );
 
-    const onBudgetDeposited = (from, amount, event) => {
-      setBudgetEvents((prev) => [
-        {
-          type: "deposit",
-          from,
-          amount: ethers.formatUnits(amount, 6),
-          blockNumber: event.blockNumber,
-        },
-        ...prev.slice(0, 49),
-      ]);
+    let lastBlockChecked = -1;
+    let isMounted = true;
+
+    const poll = async () => {
+      if (!isMounted) return;
+      try {
+        const currentBlock = await provider.getBlockNumber();
+        if (lastBlockChecked === -1) {
+          lastBlockChecked = currentBlock > 50 ? currentBlock - 50 : 0;
+        }
+        if (currentBlock > lastBlockChecked) {
+          const filterDeposit = vault.filters.BudgetDeposited();
+          const filterAlloc = vault.filters.BudgetAllocated();
+          const filterPay = vault.filters.PaymentExecuted();
+          
+          const [deposits, allocs, pays] = await Promise.all([
+            vault.queryFilter(filterDeposit, lastBlockChecked + 1, currentBlock),
+            vault.queryFilter(filterAlloc, lastBlockChecked + 1, currentBlock),
+            vault.queryFilter(filterPay, lastBlockChecked + 1, currentBlock)
+          ]);
+          
+          let newEvents = [];
+          deposits.forEach(log => newEvents.push({ type: "deposit", from: log.args[0], amount: ethers.formatUnits(log.args[1], 6), blockNumber: log.blockNumber, txHash: log.transactionHash }));
+          allocs.forEach(log => newEvents.push({ type: "allocate", agent: log.args[0], amount: ethers.formatUnits(log.args[1], 6), blockNumber: log.blockNumber, txHash: log.transactionHash }));
+          pays.forEach(log => newEvents.push({ type: "payment", agent: log.args[0], vendor: log.args[1], amount: ethers.formatUnits(log.args[2], 6), blockNumber: log.blockNumber, txHash: log.transactionHash }));
+          
+          if (newEvents.length > 0 && isMounted) {
+            newEvents.sort((a, b) => b.blockNumber - a.blockNumber); // desc
+            setBudgetEvents(prev => {
+              const merged = [...newEvents, ...prev];
+              const unique = Array.from(new Map(merged.map(item => [item.txHash + item.type, item])).values());
+              return unique.slice(0, 50);
+            });
+          }
+          lastBlockChecked = currentBlock;
+        }
+
+        // Fetch initial available budget
+        const b = await vault.getAvailableBudget();
+        if (isMounted) setAvailableBudget(ethers.formatUnits(b, 6));
+
+      } catch (err) {
+        console.error("Budget poll error:", err);
+      }
     };
 
-    const onBudgetAllocated = (agent, amount, event) => {
-      setBudgetEvents((prev) => [
-        {
-          type: "allocate",
-          agent,
-          amount: ethers.formatUnits(amount, 6),
-          blockNumber: event.blockNumber,
-        },
-        ...prev.slice(0, 49),
-      ]);
-    };
-
-    const onPaymentExecuted = (
-      agent,
-      vendor,
-      amount,
-      event
-    ) => {
-      setBudgetEvents((prev) => [
-        {
-          type: "payment",
-          agent,
-          vendor,
-          amount: ethers.formatUnits(amount, 6),
-          blockNumber: event.blockNumber,
-        },
-        ...prev.slice(0, 49),
-      ]);
-    };
-
-    vault.on("BudgetDeposited", onBudgetDeposited);
-    vault.on("BudgetAllocated", onBudgetAllocated);
-    vault.on("PaymentExecuted", onPaymentExecuted);
-
-    // Fetch initial available budget
-    vault.getAvailableBudget().then((b) => {
-      setAvailableBudget(ethers.formatUnits(b, 6));
-    }).catch(console.error);
+    poll();
+    const interval = setInterval(poll, 4000);
 
     return () => {
-      vault.off("BudgetDeposited", onBudgetDeposited);
-      vault.off("BudgetAllocated", onBudgetAllocated);
-      vault.off("PaymentExecuted", onPaymentExecuted);
+      isMounted = false;
+      clearInterval(interval);
     };
   }, [getProvider]);
 

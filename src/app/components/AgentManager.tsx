@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { agents, type Agent } from "./mock-data";
 import { toast } from "sonner";
+import { getAddressExplorerUrl } from "../../utils/explorer";
 
 function StatusBadge({ status }: { status: Agent["status"] }) {
   const config = {
@@ -210,11 +211,10 @@ export function AgentManager() {
             <button
               key={status}
               onClick={() => setFilterStatus(status)}
-              className={`px-3 py-1.5 rounded-md text-[12px] transition-colors ${
-                filterStatus === status
-                  ? "bg-[#7C3AED] text-white"
-                  : "text-muted-foreground hover:text-foreground"
-              }`}
+              className={`px-3 py-1.5 rounded-md text-[12px] transition-colors ${filterStatus === status
+                ? "bg-[#7C3AED] text-white"
+                : "text-muted-foreground hover:text-foreground"
+                }`}
             >
               {status.charAt(0).toUpperCase() + status.slice(1)}
             </button>
@@ -273,9 +273,16 @@ export function AgentManager() {
                     </div>
                   </td>
                   <td className="px-5 py-4">
-                    <span className="text-[12px] text-muted-foreground" style={{ fontFamily: "'Roboto Mono', monospace" }}>
+                    <a
+                      href={getAddressExplorerUrl(agent.wallet)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-[12px] text-[#7C3AED] hover:underline"
+                      style={{ fontFamily: "'Roboto Mono', monospace" }}
+                      onClick={(e) => e.stopPropagation()}
+                    >
                       {agent.wallet}
-                    </span>
+                    </a>
                   </td>
                   <td className="px-5 py-4">
                     <div className="space-y-1">
@@ -360,9 +367,15 @@ export function AgentManager() {
                     <Wallet className="w-4 h-4 text-muted-foreground" />
                     <span className="text-[12px] text-muted-foreground">Wallet</span>
                   </div>
-                  <p className="text-[13px] text-foreground" style={{ fontFamily: "'Roboto Mono', monospace" }}>
+                  <a
+                    href={getAddressExplorerUrl(selectedAgent.wallet)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-[13px] text-[#7C3AED] hover:underline"
+                    style={{ fontFamily: "'Roboto Mono', monospace" }}
+                  >
                     {selectedAgent.wallet}
-                  </p>
+                  </a>
                 </div>
                 <div className="bg-muted/50 rounded-lg p-3">
                   <div className="flex items-center gap-2 mb-1">

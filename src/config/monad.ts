@@ -2,6 +2,7 @@
 export const MONAD_CONFIG = {
   chainId: 10143,
   rpcUrl: "https://testnet-rpc.monad.xyz",
+  wsUrl: "wss://monad-testnet.blockvision.org/v1/3ALilKEpxGmrGJcdsIzhU83Az66",
   explorerUrl: "https://testnet.monadexplorer.com",
   blockTime: 400,   // ~400ms
   finality: 800,    // ~800ms

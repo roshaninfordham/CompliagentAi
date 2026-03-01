@@ -4,26 +4,46 @@ const { getUnlink } = require("../unlink-service");
 
 const MOCK_USDC = "0x18c945c79f85f994A10356Aa4945371Ec4cD75D4";
 
-// POST /api/funding/fund-agent — Move tokens from private pool to agent burner
+// POST /api/funding/fund-agent — Move tokens to agent burner (Directly for Demo)
 router.post("/fund-agent", async (req, res) => {
   try {
     const { agentIndex, amount } = req.body;
     const unlink = await getUnlink();
 
-    // This withdraws from the private pool into the burner account
-    // The on-chain observer sees tokens appearing at the burner address
-    // but CANNOT trace them back to the enterprise's deposit
-    const result = await unlink.burner.fund(agentIndex, {
-      token: MOCK_USDC,
-      amount: BigInt(amount), // amount in smallest unit (e.g., 1000000 for 1 USDC with 6 decimals)
-    });
+    const { address: burnerAddress } = await unlink.burner.addressOf(agentIndex);
 
-    res.json({
+    // Instead of using unlink pool which requires a subsidized relayer that throws 0x275d9a88,
+    // we bypass it for the demo by funding the burner directly from the enterprise master wallet.
+    const { ethers } = require("ethers");
+    const provider = new ethers.JsonRpcProvider("https://testnet-rpc.monad.xyz");
+    const deployer = new ethers.Wallet(process.env.DEPLOYER_PRIVATE_KEY, provider);
+
+    const ERC20_ABI = ["function transfer(address to, uint256 amount) returns (bool)"];
+    const usdc = new ethers.Contract(MOCK_USDC, ERC20_ABI, deployer);
+
+    // 1. Transfer Mock USDC
+    const transferTx = await usdc.transfer(burnerAddress, BigInt(amount));
+    await transferTx.wait();
+
+    // 2. Transfer MON for gas
+    const monTx = await deployer.sendTransaction({
+      to: burnerAddress,
+      value: ethers.parseEther("0.05")
+    });
+    await monTx.wait();
+
+    const result = {
+      txHash: transferTx.hash,
+      gasTxHash: monTx.hash
+    };
+
+    res.setHeader("Content-Type", "application/json");
+    res.end(JSON.stringify({
       success: true,
       agentIndex,
       fundedAmount: amount,
-      result,
-    });
+      result
+    }, (key, value) => typeof value === 'bigint' ? value.toString() : value));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
