@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   Bot,
   ArrowUpRight,
@@ -11,10 +11,22 @@ import {
   EyeOff,
   FileText,
   Clock,
+  Wallet,
+  Lock,
+  Blocks,
+  ExternalLink,
+  Bell,
+  Scale,
+  CheckCircle2,
 } from "lucide-react";
 import { dashboardStats, transactions, agents } from "./mock-data";
 import { useNavigate } from "react-router";
 import { toast } from "sonner";
+import { ethers } from "ethers";
+import { useCompliAgent } from "../../hooks/useCompliAgent";
+import { useMonadContracts } from "../../hooks/useMonadContracts.js";
+import { MONAD_CONFIG } from "../../config/monad";
+import { getExplorerUrl } from "../../utils/explorer";
 
 function StatCard({
   icon: Icon,
@@ -106,7 +118,102 @@ function PrivacyBadge({ shielded }: { shielded: boolean }) {
 
 export function Dashboard() {
   const [liveTxCount, setLiveTxCount] = useState(dashboardStats.totalTransactions);
+  const [blockNumber, setBlockNumber] = useState<number | null>(null);
+  const [onChainRules, setOnChainRules] = useState<any[]>([]);
+  const [totalStamped, setTotalStamped] = useState<number | null>(null);
+  const providerRef = useRef<ethers.JsonRpcProvider | null>(null);
   const navigate = useNavigate();
+  const [mnemonic, setMnemonic] = useState<string | null>(null);
+
+  const MOCK_USDC = "0x18c945c79f85f994A10356Aa4945371Ec4cD75D4";
+
+  const {
+    ready,
+    busy,
+    walletExists,
+    activeAccount,
+    balances,
+    status,
+    initializeEnterprise,
+    depositToPool,
+    refresh,
+  } = useCompliAgent();
+
+  // On-chain contract events & reads (Steps 13-16)
+  const {
+    complianceEvents,
+    budgetEvents,
+    availableBudget,
+    getAgentUtilization,
+    checkCompliance,
+    getComplianceRules,
+    getTotalStamped,
+  } = useMonadContracts();
+
+  // Fetch on-chain compliance rules & stamp count on mount
+  useEffect(() => {
+    getComplianceRules().then(setOnChainRules).catch(console.error);
+    getTotalStamped().then(setTotalStamped).catch(console.error);
+  }, [getComplianceRules, getTotalStamped]);
+
+  // Show toast on new on-chain events
+  useEffect(() => {
+    if (complianceEvents.length > 0) {
+      const latest = complianceEvents[0];
+      toast.success(`Compliance stamped at block ${latest.blockNumber}`, {
+        description: `Tx: ${latest.txHash.slice(0, 10)}...`,
+      });
+    }
+  }, [complianceEvents.length]);
+
+  useEffect(() => {
+    if (budgetEvents.length > 0) {
+      const latest = budgetEvents[0];
+      const labels = { deposit: "Budget Deposited", allocate: "Budget Allocated", payment: "Payment Executed" };
+      toast.info(`${labels[latest.type]}: ${latest.amount} USDC`, {
+        description: `Block ${latest.blockNumber}`,
+      });
+    }
+  }, [budgetEvents.length]);
+
+  async function handleSetup() {
+    const result = await initializeEnterprise();
+    if (result?.isNew) {
+      setMnemonic(result.mnemonic);
+      toast.success("Enterprise wallet created!");
+    } else {
+      toast.success("Wallet already initialized.");
+    }
+  }
+
+  async function handleDeposit() {
+    // Deposit 100 USDC (6 decimals) into private pool
+    await depositToPool(MOCK_USDC, BigInt(100 * 1e6));
+    await refresh();
+    toast.success("Deposited 100 USDC to private pool");
+  }
+
+  // Live block number polling (every 2s)
+  useEffect(() => {
+    if (!providerRef.current) {
+      providerRef.current = new ethers.JsonRpcProvider(MONAD_CONFIG.rpcUrl);
+    }
+    const provider = providerRef.current;
+
+    // Initial fetch
+    provider.getBlockNumber().then(setBlockNumber).catch(console.error);
+
+    const blockInterval = setInterval(async () => {
+      try {
+        const block = await provider.getBlockNumber();
+        setBlockNumber(block);
+      } catch (err) {
+        console.error("Block polling error:", err);
+      }
+    }, 2000);
+
+    return () => clearInterval(blockInterval);
+  }, []);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -119,8 +226,107 @@ export function Dashboard() {
     (dashboardStats.budgetUsed / dashboardStats.totalBudget) * 100
   );
 
+  const poolBalance = balances?.[MOCK_USDC]
+    ? (Number(balances[MOCK_USDC]) / 1e6).toFixed(2)
+    : "0.00";
+
   return (
     <div className="space-y-6">
+      {/* Unlink Enterprise Wallet Setup */}
+      {!walletExists && ready && (
+        <div className="bg-[#7C3AED]/5 border border-[#7C3AED]/15 rounded-xl p-5">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-lg bg-[#7C3AED]/10 flex items-center justify-center">
+                <Lock className="w-5 h-5 text-[#7C3AED]" />
+              </div>
+              <div>
+                <h4 className="text-[14px] text-foreground">Enterprise Wallet Not Initialized</h4>
+                <p className="text-[12px] text-muted-foreground">Set up your Unlink private pool to enable agent funding</p>
+              </div>
+            </div>
+            <button
+              onClick={handleSetup}
+              disabled={busy}
+              className="flex items-center gap-2 bg-[#7C3AED] text-white px-5 py-2.5 rounded-lg hover:bg-[#6D28D9] transition-colors text-[13px] disabled:opacity-50"
+            >
+              <Wallet className="w-4 h-4" />
+              {busy ? "Initializing..." : "Initialize Enterprise Wallet"}
+            </button>
+          </div>
+          {mnemonic && (
+            <div className="mt-4 p-4 bg-amber-50 border border-amber-200 rounded-lg">
+              <p className="text-[12px] font-semibold text-red-600 mb-1">⚠ BACKUP THIS MNEMONIC — IT CONTROLS YOUR PRIVATE POOL:</p>
+              <code className="block text-[12px] text-foreground break-all" style={{ fontFamily: "'Roboto Mono', monospace" }}>
+                {mnemonic}
+              </code>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Unlink Private Pool Card */}
+      {walletExists && (
+        <div className="bg-card rounded-xl border border-border p-5">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-lg bg-[#7C3AED]/10 flex items-center justify-center">
+                <Wallet className="w-5 h-5 text-[#7C3AED]" />
+              </div>
+              <div>
+                <p className="text-[13px] text-muted-foreground">Unlink Private Pool</p>
+                <p className="text-[22px] text-foreground" style={{ fontFamily: "'Roboto Mono', monospace" }}>
+                  {poolBalance} USDC
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-3">
+              <div className="text-right mr-4">
+                <p className="text-[11px] text-muted-foreground">Account</p>
+                <p className="text-[11px] text-foreground truncate max-w-[140px]" style={{ fontFamily: "'Roboto Mono', monospace" }}>
+                  {activeAccount?.address || "—"}
+                </p>
+              </div>
+              <span className={`text-[11px] px-2.5 py-1 rounded-full ${
+                busy ? "bg-amber-50 text-amber-700" : "bg-emerald-50 text-emerald-700"
+              }`}>
+                {busy ? status || "Processing..." : "Ready"}
+              </span>
+              <button
+                onClick={handleDeposit}
+                disabled={busy}
+                className="flex items-center gap-2 bg-[#7C3AED] text-white px-4 py-2 rounded-lg hover:bg-[#6D28D9] transition-colors text-[13px] disabled:opacity-50"
+              >
+                <DollarSign className="w-4 h-4" />
+                {busy ? "Depositing..." : "Deposit 100 USDC"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Monad Live Block */}
+      <div className="bg-card rounded-xl border border-border p-4 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-lg bg-[#836EF9]/10 flex items-center justify-center">
+            <Blocks className="w-5 h-5 text-[#836EF9]" />
+          </div>
+          <div>
+            <p className="text-[12px] text-muted-foreground">Monad Testnet — Live Block</p>
+            <p className="text-[20px] text-foreground" style={{ fontFamily: "'Roboto Mono', monospace" }}>
+              {blockNumber !== null ? `#${blockNumber.toLocaleString()}` : "Connecting..."}
+            </p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="relative flex h-2.5 w-2.5">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+            <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
+          </span>
+          <span className="text-[11px] text-emerald-600">Live (~400ms blocks)</span>
+        </div>
+      </div>
+
       {/* Stats Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard
@@ -186,6 +392,155 @@ export function Dashboard() {
         </div>
       </div>
 
+      {/* On-Chain Events Feed */}
+      {(complianceEvents.length > 0 || budgetEvents.length > 0) && (
+        <div className="bg-card rounded-xl border border-border">
+          <div className="flex items-center justify-between p-5 border-b border-border">
+            <div className="flex items-center gap-2">
+              <Bell className="w-4 h-4 text-[#7C3AED]" />
+              <h3 className="text-[15px] text-foreground">On-Chain Events</h3>
+            </div>
+            <span className="text-[11px] text-muted-foreground" style={{ fontFamily: "'Roboto Mono', monospace" }}>
+              Live from contracts
+            </span>
+          </div>
+          <div className="divide-y divide-border max-h-[220px] overflow-y-auto">
+            {complianceEvents.slice(0, 5).map((evt, i) => (
+              <div key={`c-${i}`} className="flex items-center justify-between px-5 py-3">
+                <div className="flex items-center gap-3">
+                  <div className="w-7 h-7 rounded-lg bg-emerald-50 flex items-center justify-center">
+                    <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+                  </div>
+                  <div>
+                    <p className="text-[12px] text-foreground">Compliance Stamped</p>
+                    <p className="text-[10px] text-muted-foreground" style={{ fontFamily: "'Roboto Mono', monospace" }}>
+                      {evt.txHash.slice(0, 18)}...
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-[11px] text-muted-foreground" style={{ fontFamily: "'Roboto Mono', monospace" }}>
+                    Block {evt.blockNumber.toLocaleString()}
+                  </span>
+                  <a
+                    href={getExplorerUrl(evt.txHash)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-[#7C3AED] hover:text-[#6D28D9]"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5" />
+                  </a>
+                </div>
+              </div>
+            ))}
+            {budgetEvents.slice(0, 5).map((evt, i) => (
+              <div key={`b-${i}`} className="flex items-center justify-between px-5 py-3">
+                <div className="flex items-center gap-3">
+                  <div className={`w-7 h-7 rounded-lg flex items-center justify-center ${
+                    evt.type === "deposit" ? "bg-blue-50" : evt.type === "allocate" ? "bg-amber-50" : "bg-purple-50"
+                  }`}>
+                    <DollarSign className={`w-3.5 h-3.5 ${
+                      evt.type === "deposit" ? "text-blue-600" : evt.type === "allocate" ? "text-amber-600" : "text-purple-600"
+                    }`} />
+                  </div>
+                  <div>
+                    <p className="text-[12px] text-foreground">
+                      {evt.type === "deposit" ? "Budget Deposited" : evt.type === "allocate" ? "Budget Allocated" : "Payment Executed"}
+                    </p>
+                    <p className="text-[10px] text-muted-foreground" style={{ fontFamily: "'Roboto Mono', monospace" }}>
+                      {evt.amount} USDC{evt.agent ? ` → ${evt.agent.slice(0, 10)}...` : ""}
+                    </p>
+                  </div>
+                </div>
+                <span className="text-[11px] text-muted-foreground" style={{ fontFamily: "'Roboto Mono', monospace" }}>
+                  Block {evt.blockNumber.toLocaleString()}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* On-Chain Budget (from BudgetVault) */}
+      {availableBudget && (
+        <div className="bg-card rounded-xl border border-border p-5">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-[12px] text-muted-foreground">BudgetVault — Available On-Chain</p>
+              <p className="text-[22px] text-foreground" style={{ fontFamily: "'Roboto Mono', monospace" }}>
+                {Number(availableBudget).toLocaleString()} USDC
+              </p>
+            </div>
+            <div className="flex items-center gap-4">
+              {totalStamped !== null && (
+                <div className="text-right">
+                  <p className="text-[11px] text-muted-foreground">Compliance Stamps</p>
+                  <p className="text-[16px] text-emerald-600 flex items-center gap-1" style={{ fontFamily: "'Roboto Mono', monospace" }}>
+                    <CheckCircle2 className="w-4 h-4" />
+                    {totalStamped}
+                  </p>
+                </div>
+              )}
+              <a
+                href={`${MONAD_CONFIG.explorerUrl}/address/${MONAD_CONFIG.contracts.budgetVault}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-1 text-[12px] text-[#7C3AED] hover:underline"
+              >
+                View Contract <ExternalLink className="w-3 h-3" />
+              </a>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* On-Chain Compliance Rules */}
+      {onChainRules.length > 0 && (
+        <div className="bg-card rounded-xl border border-border">
+          <div className="flex items-center justify-between p-5 border-b border-border">
+            <div className="flex items-center gap-2">
+              <Scale className="w-4 h-4 text-[#7C3AED]" />
+              <h3 className="text-[15px] text-foreground">On-Chain Compliance Rules</h3>
+            </div>
+            <a
+              href={`${MONAD_CONFIG.explorerUrl}/address/${MONAD_CONFIG.contracts.complianceRegistry}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-1 text-[11px] text-[#7C3AED] hover:underline"
+            >
+              ComplianceRegistry <ExternalLink className="w-3 h-3" />
+            </a>
+          </div>
+          <div className="divide-y divide-border">
+            {onChainRules.map((rule) => (
+              <div key={rule.index} className="flex items-center justify-between px-5 py-3">
+                <div className="flex items-center gap-3">
+                  <span className={`w-2 h-2 rounded-full ${rule.enabled ? "bg-emerald-500" : "bg-gray-300"}`} />
+                  <div>
+                    <p className="text-[13px] text-foreground">{rule.name}</p>
+                    <p className="text-[10px] text-muted-foreground" style={{ fontFamily: "'Roboto Mono', monospace" }}>
+                      {rule.ruleType}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className="text-[12px] text-foreground" style={{ fontFamily: "'Roboto Mono', monospace" }}>
+                    {rule.ruleType === "budget_cap" || rule.ruleType === "aml_threshold"
+                      ? `${(Number(rule.value) / 1e6).toLocaleString()} USDC`
+                      : rule.value}
+                  </span>
+                  <span className={`text-[10px] px-2 py-0.5 rounded-full ${
+                    rule.enabled ? "bg-emerald-50 text-emerald-700" : "bg-gray-100 text-gray-500"
+                  }`}>
+                    {rule.enabled ? "Active" : "Disabled"}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Two columns */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Live Transaction Feed */}
@@ -230,9 +585,16 @@ export function Dashboard() {
                       {tx.vendor}
                     </p>
                     <div className="flex items-center gap-2 mt-0.5">
-                      <span className="text-[11px] text-muted-foreground" style={{ fontFamily: "'Roboto Mono', monospace" }}>
+                      <a
+                        href={getExplorerUrl(tx.txHash)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-[11px] text-[#7C3AED] hover:underline inline-flex items-center gap-1"
+                        style={{ fontFamily: "'Roboto Mono', monospace" }}
+                      >
                         {tx.txHash}
-                      </span>
+                        <ExternalLink className="w-2.5 h-2.5" />
+                      </a>
                       <PrivacyBadge shielded={tx.shielded} />
                     </div>
                   </div>

@@ -1,451 +1,644 @@
-# CompliAgent
-
-**Institutional-Grade Compliance Dashboard for AI Agents on Monad**
-
-CompliAgent is a privacy-first compliance layer for autonomous AI agents that execute on-chain financial transactions. It enforces enterprise compliance rules (budget caps, vendor allowlists, AML thresholds, rate limits) while preserving transaction privacy via the Unlink SDK's zero-knowledge primitives (burner accounts, shielded transfers, unlinkable payments), all settled on Monad's high-performance L1.
-
----
-
-## Table of Contents
-
-1. [Architecture Overview](#architecture-overview)
-2. [Tech Stack](#tech-stack)
-3. [Project Structure](#project-structure)
-4. [Getting Started](#getting-started)
-5. [Available Scripts](#available-scripts)
-6. [Pages & Routes](#pages--routes)
-7. [Design System](#design-system)
-8. [Mock Data & How to Replace with Real APIs](#mock-data--how-to-replace-with-real-apis)
-9. [Integration Roadmap](#integration-roadmap)
-10. [Key Concepts](#key-concepts)
-11. [Environment Variables (Future)](#environment-variables-future)
-12. [Troubleshooting](#troubleshooting)
+<p align="center">
+  <h1 align="center">CompliAgent AI</h1>
+  <p align="center">
+    <strong>Privacy-Preserving Multi-Agent Compliance Platform on Monad</strong>
+  </p>
+  <p align="center">
+    Enterprise-grade AI agent orchestration with on-chain compliance enforcement and zero-knowledge transaction privacy
+  </p>
+  <p align="center">
+    <a href="#-quick-start">Quick Start</a> •
+    <a href="#-architecture">Architecture</a> •
+    <a href="#-project-structure">Project Structure</a> •
+    <a href="#-how-it-works">How It Works</a> •
+    <a href="#-api-reference">API Reference</a> •
+    <a href="#-smart-contracts">Smart Contracts</a> •
+    <a href="#-contributing">Contributing</a>
+  </p>
+</p>
 
 ---
 
-## Architecture Overview
+## 🎯 What is CompliAgent?
+
+CompliAgent is the **compliance layer for autonomous AI agents** that need to make financial transactions on-chain. Think of it as the CFO's dashboard for AI — it lets enterprises:
+
+1. **Deploy AI agents** that can make payments autonomously
+2. **Enforce compliance rules** (budget caps, vendor allowlists, AML thresholds) before every transaction
+3. **Preserve privacy** using Unlink's zero-knowledge privacy pool — no one on-chain can link agent payments back to the enterprise
+4. **Audit everything** with on-chain compliance stamps and off-chain audit trails
+
+### The Problem
+
+AI agents are increasingly performing financial operations — paying for API calls, settling invoices, buying resources. But enterprises need:
+
+- **Compliance**: Every payment must pass budget/AML/vendor checks
+- **Privacy**: Competitors shouldn't see your AI's spending patterns on a public blockchain
+- **Auditability**: Regulators and CFOs need full transaction trails
+- **Control**: Budget limits and emergency stops per agent
+
+### The Solution
+
+CompliAgent sits between your AI agents and the blockchain:
 
 ```
-                                 CompliAgent Architecture
-                                 
- +------------------+     HTTP 402     +-------------------+
- |   AI Agent       | <-------------> |  Paywalled API     |
- |   (Autonomous)   |                 |  (Resource Server) |
- +--------+---------+                 +-------------------+
-          |
-          | x402 payment required
-          v
- +------------------+     Compliance    +-------------------+
- |   CompliAgent    | <-- Rules ------> |  Rule Engine       |
- |   Middleware      |                  |  (Budget/AML/Vendor)|
- +--------+---------+                  +-------------------+
-          |
-          | ZK Compliance Stamp
-          v
- +------------------+     Shielded     +-------------------+
- |   Unlink SDK     | <-- Transfer --> |  Monad L1          |
- |   (Privacy)      |                  |  (Settlement)      |
- +------------------+                  +-------------------+
+AI Agent → CompliAgent Compliance Check → Unlink Privacy Pool → Monad Blockchain
+                                                    ↓
+                                          On-chain compliance stamp
+                                          (ZK proof hash only — no amounts, no identities)
 ```
-
-**Core Flow (x402 Agent Purchase):**
-1. AI agent makes HTTP request to paywalled resource
-2. Server responds with HTTP 402 + payment requirements (x402 protocol)
-3. CompliAgent intercepts, validates against compliance rules
-4. Unlink SDK generates ZK compliance stamp (proof of compliance without identity exposure)
-5. Shielded transfer settles on Monad (~800ms finality)
-6. Agent retries request with payment receipt, receives data
-
-**Affiliate Flow (3-Party Commission Split):**
-1. Buyer initiates purchase via x402
-2. CompliAgent validates all three parties + commission structure
-3. ZK proof verifies `affiliate_share + merchant_share = total` without revealing individual values
-4. Shielded transfers to both parties settle on Monad
 
 ---
 
-## Tech Stack
+## 🏗 Architecture
 
-| Layer        | Technology                      | Version   | Purpose                                    |
-|------------- |---------------------------------|-----------|-------------------------------------------|
-| Framework    | React                           | 18.3.1    | UI component library                       |
-| Routing      | React Router (Data mode)        | 7.13.0    | Client-side routing with `RouterProvider`  |
-| Styling      | Tailwind CSS v4                 | 4.1.12    | Utility-first CSS framework               |
-| Build Tool   | Vite                            | 6.3.5     | Dev server + production bundler            |
-| Icons        | Lucide React                    | 0.487.0   | Icon library (used throughout)             |
-| Toasts       | Sonner                          | 2.0.3     | Toast notification system                  |
-| Animation    | Motion                          | 12.23.24  | Animation library (available, not yet used)|
-| UI Primitives| Radix UI                        | various   | Headless accessible components (available) |
-| Package Mgr  | pnpm                            | -         | Fast, disk-space efficient package manager |
-
-**Future integrations (not yet wired):**
-- Unlink SDK - Privacy primitives (burner accounts, shielded transfers)
-- Monad RPC - On-chain settlement and block data
-- ethers.js / viem - Ethereum-compatible wallet interactions
-
----
-
-## Project Structure
+### System Overview
 
 ```
-/
-├── package.json                    # Dependencies & scripts
-├── vite.config.ts                  # Vite build configuration (path aliases, plugins)
-├── postcss.config.mjs              # PostCSS config (empty - Tailwind v4 handles it)
-├── README.md                       # <-- You are here
+┌──────────────────────────────────────────────────────────────────────────┐
+│                        CompliAgent Architecture                         │
+├──────────────────────────────────────────────────────────────────────────┤
+│                                                                          │
+│  ┌─────────────┐     ┌──────────────────┐     ┌─────────────────────┐   │
+│  │   React UI   │────▶│  Express Backend  │────▶│   Monad Testnet     │   │
+│  │  (Vite 6)    │◀────│  (Port 3001)      │◀────│   (Chain 10143)     │   │
+│  │              │     │                    │     │                     │   │
+│  │ • Dashboard  │     │ • Compliance       │     │ • ComplianceReg.   │   │
+│  │ • Agent Mgmt │     │   Engine           │     │ • BudgetVault      │   │
+│  │ • Audit      │     │ • Privacy Helpers  │     │ • MockUSDC         │   │
+│  │ • Tx Feed    │     │ • Rate Limiter     │     │ • AffiliateSettler │   │
+│  │ • Demo       │     │                    │     │                     │   │
+│  └─────────────┘     └────────┬───────────┘     └─────────────────────┘   │
+│                               │                                           │
+│                    ┌──────────▼───────────┐                               │
+│                    │   Unlink SDK          │                               │
+│                    │   (Privacy Layer)     │                               │
+│                    │                       │                               │
+│                    │ • ZK Privacy Pool     │                               │
+│                    │ • Burner Wallets      │                               │
+│                    │ • Shielded Transfers  │                               │
+│                    └───────────────────────┘                               │
+│                                                                           │
+└───────────────────────────────────────────────────────────────────────────┘
+```
+
+### Privacy Flow (Unlink Integration)
+
+This is the core innovation — how enterprise payments become unlinkable on-chain:
+
+```
+CFO's MetaMask (0xA27b...)
 │
-├── src/
-│   ├── styles/
-│   │   ├── index.css               # Master CSS entry (imports fonts, tailwind, theme)
-│   │   ├── fonts.css               # Google Fonts imports (Inter + Roboto Mono)
-│   │   ├── tailwind.css            # Tailwind v4 directives + animation plugin
-│   │   └── theme.css               # Design tokens (colors, radii, typography)
-│   │
-│   ├── imports/
-│   │   ├── compliagent-blueprint.md  # Full architecture blueprint (reference doc)
-│   │   └── compliagent-dashboard.md  # Dashboard UI specification (reference doc)
-│   │
-│   └── app/
-│       ├── App.tsx                 # Root component (RouterProvider)
-│       ├── routes.tsx              # Route definitions (all 6 pages)
-│       │
-│       └── components/
-│           ├── Layout.tsx          # Sidebar + top bar + Sonner Toaster
-│           ├── Dashboard.tsx       # Dashboard Overview page (/)
-│           ├── AgentDemo.tsx       # Live Demo simulation (/demo)
-│           ├── AgentManager.tsx    # Agent Manager page (/agents)
-│           ├── ComplianceRules.tsx # Compliance Rules page (/rules)
-│           ├── AuditReports.tsx    # Audit Reports page (/audit)
-│           ├── TransactionFeed.tsx # Transaction Feed page (/transactions)
-│           ├── mock-data.ts        # All mock data + TypeScript interfaces
-│           ├── ui/                 # shadcn/ui component library (pre-installed)
-│           └── figma/              # Figma-specific utilities (ImageWithFallback)
+│ 1. deposit() — public tx, tokens enter Unlink private pool
+▼
+┌─────────────────────────────┐
+│   UNLINK PRIVATE POOL       │  On-chain observer sees the deposit
+│   (shielded balance)        │  ← but CANNOT see what happens next
+└──────────┬──────────────────┘
+           │
+           │ 2. burner.fund(agentIndex) — pool → burner (link BROKEN!)
+           ▼
+┌─────────────────────────────┐
+│   BURNER ACCOUNT #0         │  Fresh address, no history
+│   (Agent Alpha)             │  No connection to 0xA27b...
+└──────────┬──────────────────┘
+           │
+           │ 3. burner.send() — agent pays vendor
+           ▼
+┌─────────────────────────────┐
+│   VENDOR / API SERVER       │  Sees payment from random burner
+│   (x402 resource)           │  Cannot identify the enterprise
+└─────────────────────────────┘
+           │
+           │ 4. After use, sweep remaining funds back
+           ▼
+┌─────────────────────────────┐
+│   UNLINK PRIVATE POOL       │  Funds return, burner discarded
+└─────────────────────────────┘
+
+What the public Monad explorer shows:
+  → Random addresses sending tokens. No pattern. No enterprise identity.
+
+What the CFO's dashboard shows:
+  → Full audit trail: which agent, which vendor, how much, compliance status
+    (all stored off-chain in the backend)
+```
+
+### Compliance Flow
+
+Every agent payment goes through this pipeline:
+
+```
+Agent Payment Request
+        │
+        ▼
+┌───────────────────┐     ┌─────────────────────┐
+│ 1. COMPLIANCE     │     │ Rules Checked:       │
+│    CHECK          │────▶│ • Vendor allowlist   │
+│                   │     │ • Max tx amount      │
+│                   │     │ • Agent budget cap   │
+│                   │     │ • AML threshold      │
+│                   │     │ • Rate limit         │
+└───────┬───────────┘     └─────────────────────┘
+        │
+        ├── FAIL → Return error, block payment
+        │
+        ▼ PASS
+┌───────────────────┐
+│ 2. EXECUTE via    │     Payment goes through Unlink burner
+│    BURNER WALLET  │────▶ (privacy-preserving, unlinkable)
+└───────┬───────────┘
+        │
+        ▼
+┌───────────────────┐
+│ 3. STAMP ON-CHAIN │     ZK proof hash stamped on ComplianceRegistry
+│    (ZK proof)     │────▶ (no sensitive data exposed on-chain)
+└───────┬───────────┘
+        │
+        ▼
+┌───────────────────┐
+│ 4. AUDIT TRAIL    │     Full details stored in backend
+│    (off-chain)    │────▶ (agent, vendor, amount, timestamp, proof)
+└───────────────────┘
 ```
 
 ---
 
-## Getting Started
+## 📁 Project Structure
+
+```
+CompliagentAi/
+│
+├── 📄 README.md                    ← You are here
+├── 📄 CONTRIBUTING.md              ← How to contribute
+├── 📄 SETUP.md                     ← Detailed setup guide
+│
+├── 🖥 src/                         ← React Frontend (Vite + Tailwind)
+│   ├── main.tsx                    ← Entry point (UnlinkProvider wrapper)
+│   ├── config/
+│   │   └── monad.ts                ← Monad testnet config (addresses, RPC)
+│   ├── hooks/
+│   │   ├── useCompliAgent.js       ← Unlink SDK React hook
+│   │   └── useMonadContracts.js    ← On-chain event subscriptions & reads
+│   ├── utils/
+│   │   └── explorer.ts            ← Monad explorer URL builders
+│   ├── app/
+│   │   ├── App.tsx                 ← Root component (RouterProvider)
+│   │   ├── routes.tsx              ← Page routes with Layout wrapper
+│   │   └── components/
+│   │       ├── Layout.tsx          ← Sidebar + topbar shell
+│   │       ├── Dashboard.tsx       ← Main dashboard (714 lines)
+│   │       ├── AgentManager.tsx    ← Agent CRUD & monitoring
+│   │       ├── ComplianceRules.tsx ← Rule editor (budget, vendor, AML)
+│   │       ├── AuditReports.tsx    ← ZK proof viewer & report cards
+│   │       ├── TransactionFeed.tsx ← Live tx feed with privacy badges
+│   │       ├── AgentDemo.tsx       ← Interactive demo simulator
+│   │       ├── mock-data.ts        ← TypeScript interfaces + sample data
+│   │       └── ui/                 ← 48 shadcn/ui primitives (Radix-based)
+│   └── styles/
+│       ├── index.css               ← Master import (fonts → tailwind → theme)
+│       ├── fonts.css               ← Inter + Roboto Mono
+│       ├── tailwind.css            ← Tailwind v4 directives
+│       └── theme.css               ← Design tokens (purple #7C3AED primary)
+│
+├── ⚙️ backend/                     ← Express API Server (Node.js, CommonJS)
+│   ├── server.js                   ← Express app (port 3001, 15+ endpoints)
+│   ├── unlink-service.js           ← Unlink SDK lazy singleton
+│   ├── compliance-engine.js        ← Rule engine + payment processor
+│   ├── monad-provider.js           ← Monad RPC provider (rate-limited)
+│   ├── rate-limiter.js             ← Token bucket (25 req/sec)
+│   ├── privacy-helpers.js          ← ZK stamp + data redaction helpers
+│   ├── config/
+│   │   └── monad.js                ← Monad config (addresses, chain ID)
+│   ├── routes/
+│   │   ├── agents.js               ← POST /create, GET /:index/balance
+│   │   ├── funding.js              ← POST /fund-agent, POST /sweep-back
+│   │   └── payments.js             ← POST /agent-pay
+│   └── scripts/
+│       └── create-agent-wallets.js ← Generate 8 agent wallets
+│
+├── 📜 contracts/                   ← Solidity Smart Contracts (Hardhat)
+│   ├── hardhat.config.cjs          ← Hardhat config (Monad testnet)
+│   ├── deployed-addresses.json     ← Deployed contract addresses
+│   ├── contracts/
+│   │   ├── MockUSDC.sol            ← ERC-20 test stablecoin (6 decimals)
+│   │   ├── ComplianceRegistry.sol  ← On-chain compliance stamps + rules
+│   │   ├── BudgetVault.sol         ← Enterprise budget management
+│   │   └── AffiliateSettler.sol    ← Affiliate commission splits
+│   └── scripts/
+│       ├── deploy.js               ← Phase 1: deploy core contracts
+│       ├── deploy-phase4.js        ← Phase 4: deploy V2 + affiliate
+│       ├── deposit-budget.js       ← Deposit 100K USDC into vault
+│       ├── phase2-interactions.js  ← Demo: allocate, pay, stamp
+│       └── phase4-setup-v2.js      ← Set rules + batch stamp demo
+│
+├── 📄 package.json                 ← Root frontend dependencies
+├── 📄 vite.config.ts               ← Vite build config
+└── 📄 .gitignore                   ← Ignores keys, wallets, artifacts
+```
+
+### What Each Folder Does
+
+| Folder | Purpose | Tech Stack |
+|--------|---------|------------|
+| `src/` | **Frontend dashboard** — the CFO's view of all agent activity, compliance status, and on-chain data | React 18, Vite 6, Tailwind v4, Radix UI, ethers.js, Recharts |
+| `backend/` | **API server** — bridges frontend ↔ blockchain, runs compliance checks, manages Unlink privacy | Express 5, ethers 6, @unlink-xyz/node, SQLite |
+| `contracts/` | **Smart contracts** — on-chain compliance stamps, budget vaults, token management | Solidity 0.8.20, Hardhat 2, OpenZeppelin 5 |
+
+---
+
+## 🚀 Quick Start
 
 ### Prerequisites
 
-- **Node.js** >= 18.x
-- **pnpm** (recommended) or npm/yarn
+- **Node.js** ≥ 18 (we use v24)
+- **pnpm** (for frontend) — `npm install -g pnpm`
+- **npm** (for backend/contracts)
+- **Git**
 
-### Installation
+### 1. Clone & Install
 
 ```bash
-# 1. Clone the repository
-git clone <your-repo-url>
-cd compliagent
+git clone https://github.com/roshaninfordham/CompliagentAi.git
+cd CompliagentAi
 
-# 2. Install dependencies
+# Frontend dependencies
 pnpm install
-# or: npm install
-# or: yarn install
 
-# 3. Start the dev server
+# Backend dependencies
+cd backend && npm install && cd ..
+
+# Contract dependencies
+cd contracts && npm install && cd ..
+```
+
+### 2. Environment Setup
+
+```bash
+# Contracts .env — required only for deploying contracts:
+cp contracts/.env.example contracts/.env
+# Add your deployer private key to contracts/.env
+```
+
+### 3. Run the Application
+
+```bash
+# Terminal 1: Start backend
+cd backend && node server.js
+# Output: CompliAgent backend running on :3001
+
+# Terminal 2: Start frontend
 pnpm dev
-# or: npx vite
-
-# 4. Open in browser
-# Navigate to http://localhost:5173
+# Output: VITE ready at http://localhost:5173/
 ```
 
-### Production Build
+### 4. Open Dashboard
 
-```bash
-pnpm build
-# Output goes to /dist
-```
+Navigate to **http://localhost:5173** in your browser. You'll see:
+- Live Monad block number (updates every 2s)
+- On-chain compliance rules
+- Agent status grid
+- Transaction feed with privacy badges
+
+> **Note**: The Unlink SDK initializes lazily — the first call to a privacy route (`/api/agents/create`) triggers wallet creation. All other routes (Monad status, contracts, compliance) work immediately.
 
 ---
 
-## Available Scripts
+## ⚙️ How It Works
 
-| Script        | Command         | Description                               |
-|--------------|-----------------|-------------------------------------------|
-| `build`      | `vite build`    | Create production bundle in `/dist`       |
+### 1. Agent Creation (Unlink Privacy)
 
-> **Note:** You may need to add a `"dev"` script to `package.json`:
-> ```json
-> "scripts": {
->   "dev": "vite",
->   "build": "vite build",
->   "preview": "vite preview"
-> }
-> ```
+When you create an agent, the Unlink SDK derives a **burner wallet** from the enterprise's master seed:
 
----
-
-## Pages & Routes
-
-All routes are defined in `/src/app/routes.tsx` using React Router's Data mode pattern (`createBrowserRouter` + `RouterProvider`).
-
-| Route            | Component            | File                          | Description                                                                                                   |
-|-----------------|----------------------|-------------------------------|---------------------------------------------------------------------------------------------------------------|
-| `/`             | `Dashboard`          | `Dashboard.tsx`               | Overview with stat cards (active agents, transactions, compliance rate, budget), live transaction feed, agent status sidebar, budget utilization bar, quick action buttons |
-| `/demo`         | `AgentDemo`          | `AgentDemo.tsx`               | **Hackathon killer feature** - animated step-by-step simulation of Flow 1 (x402 agent purchase) and Flow 2 (affiliate 3-party settlement) with mock ZK proof generation and Monad settlement |
-| `/agents`       | `AgentManager`       | `AgentManager.tsx`            | Searchable/filterable agent table with budget progress bars, status badges, compliance indicators, and detail modal with pause/activate controls |
-| `/rules`        | `ComplianceRules`    | `ComplianceRules.tsx`         | Two tabs: (1) Toggle-able compliance rules list with type badges, (2) Vendor allowlist CRUD. Add rule modal for new rules |
-| `/audit`        | `AuditReports`       | `AuditReports.tsx`            | ZK-verified audit report generation with loading state, summary cards (pass rate, total verified, rejected, shielded %), selective disclosure notice, report list with proof detail modal |
-| `/transactions` | `TransactionFeed`    | `TransactionFeed.tsx`         | Live-updating feed (new mock tx every 5s), searchable, filterable by status, detail modal showing ZK proof hash, block number, shielded/public indicator |
-
-### Layout Structure
-
-All pages render inside `Layout.tsx` which provides:
-- **Left sidebar** (260px): Logo, navigation links, Monad connection status indicator
-- **Top bar**: Dynamic page title, breadcrumb, notification bell (3 unread), settings icon, user avatar
-- **Main content area**: Scrollable, 24px padding, renders `<Outlet />` from React Router
-- **Toast container**: Sonner `<Toaster>` at bottom-right for notifications
-
----
-
-## Design System
-
-### Colors
-
-| Token               | Value       | Usage                                    |
-|---------------------|-------------|------------------------------------------|
-| `--primary`         | `#7C3AED`   | Purple accent - buttons, badges, icons   |
-| `--background`      | `#f8f9fc`   | Page background                          |
-| `--foreground`      | `#1a1a2e`   | Primary text                             |
-| `--card`            | `#ffffff`   | Card/panel backgrounds                   |
-| `--muted`           | `#f1f1f5`   | Muted backgrounds                        |
-| `--muted-foreground`| `#6b7280`   | Secondary text                           |
-| `--border`          | `rgba(0,0,0,0.08)` | Subtle borders                  |
-| `--destructive`     | `#ef4444`   | Error/rejection states                   |
-
-### Fonts
-
-| Font           | Usage                          | Import                                |
-|---------------|--------------------------------|---------------------------------------|
-| Inter          | Body text, headings, labels    | Google Fonts (via `fonts.css`)        |
-| Roboto Mono    | Code, hashes, numbers, labels  | Google Fonts (via `fonts.css`)        |
-
-Fonts are applied inline via `style={{ fontFamily: "'Roboto Mono', monospace" }}` for monospace elements.
-
-### Badge System
-
-| Badge Type       | States                      | Visual                                 |
-|-----------------|-----------------------------|-----------------------------------------|
-| Compliance       | compliant / rejected / pending | Green / Red / Amber dot + text       |
-| Privacy          | shielded / public            | Purple EyeOff / Gray Eye icon + text  |
-| Agent Status     | active / paused / inactive   | Green / Amber / Gray dot + text       |
-| Compliance Status| compliant / flagged / pending | Green / Red / Amber shield icon       |
-
----
-
-## Mock Data & How to Replace with Real APIs
-
-All mock data lives in `/src/app/components/mock-data.ts`. It exports:
-
-### TypeScript Interfaces
-
-```typescript
-Agent         // AI agent with wallet, budget, status, compliance
-Transaction   // On-chain transaction with ZK proof, shielded flag
-ComplianceRule // Compliance rule with type, value, toggle state
-AuditReport   // ZK-verified audit report with proof hash
+```javascript
+// Backend: POST /api/agents/create
+const unlink = await getUnlink();
+const { address } = await unlink.burner.addressOf(agentIndex);
+// Returns: { address: "0xc738dE92...", index: 0 }
 ```
 
-### Exported Data
+This burner address is:
+- **Deterministic** — same index always gives same address
+- **Unlinkable** — nobody can connect it to your enterprise wallet
+- **Disposable** — use it, sweep funds back, discard
 
-| Export            | Type               | Count | Description                                |
-|------------------|--------------------|-------|--------------------------------------------|
-| `agents`         | `Agent[]`          | 8     | Agent roster with varied statuses/budgets  |
-| `transactions`   | `Transaction[]`    | 10    | Mix of compliant, rejected, pending txns   |
-| `complianceRules`| `ComplianceRule[]` | 6     | Budget, vendor, AML, rate limit rules      |
-| `auditReports`   | `AuditReport[]`    | 3     | Historical audit reports with proof hashes |
-| `vendorAllowlist`| `string[]`         | 12    | Approved vendor names                      |
-| `dashboardStats` | `object`           | 1     | Aggregated stats for dashboard cards       |
+### 2. Compliance Check
 
-### Replacement Strategy
+Before any payment, the compliance engine runs checks:
 
-To wire up real APIs, replace mock imports in each component:
-
-```typescript
-// BEFORE (mock):
-import { agents } from "./mock-data";
-
-// AFTER (real API):
-const [agents, setAgents] = useState<Agent[]>([]);
-useEffect(() => {
-  fetch("/api/agents").then(res => res.json()).then(setAgents);
-}, []);
+```javascript
+// compliance-engine.js
+async function checkCompliance(agentIndex, vendorAddress, amount) {
+  // Rule 1: Is vendor in allowlist?
+  // Rule 2: Is amount under $1,000 USDC limit?
+  // Rule 3: Does agent have sufficient budget?
+  return { compliant: true/false, errors: [...] };
+}
 ```
 
-**Key integration points per component:**
+### 3. Privacy-Preserving Payment
 
-| Component          | Replace With                                       |
-|-------------------|----------------------------------------------------|
-| `Dashboard.tsx`    | Real-time WebSocket feed for live transactions      |
-| `AgentManager.tsx` | REST API for CRUD agent wallets + Unlink SDK calls  |
-| `ComplianceRules.tsx` | API for rule CRUD + on-chain rule registry       |
-| `AuditReports.tsx` | Real ZK proof generation via Unlink SDK             |
-| `TransactionFeed.tsx` | Monad RPC + WebSocket for live block monitoring  |
-| `AgentDemo.tsx`    | Replace `setTimeout` delays with real SDK calls     |
+If compliance passes, the payment flows through the Unlink privacy pool:
 
----
-
-## Integration Roadmap
-
-### Phase 1: Unlink SDK Integration
-
-```bash
-npm install @aspect-build/unlink-sdk
-```
-
-**Where to integrate:**
-
-| SDK Method                     | Dashboard Location       | Currently Mocked As              |
-|-------------------------------|--------------------------|----------------------------------|
-| `unlink.burner.create()`      | AgentManager (Deploy)    | Static wallet addresses          |
-| `unlink.burner.list()`        | AgentManager (Table)     | `agents` array                   |
-| `unlink.transfer.shielded()`  | AgentDemo (Step 5)       | `setTimeout` delay               |
-| `unlink.proof.generate()`     | AgentDemo (Step 4)       | Random hex string generation     |
-| `unlink.proof.verify()`       | AuditReports (Verify)    | Static "verified" status         |
-
-### Phase 2: Monad Testnet Deployment
-
-```bash
-npm install ethers  # or: npm install viem
-```
-
-**Configuration needed:**
-
-```typescript
-// src/config/monad.ts (create this)
-export const MONAD_CONFIG = {
-  chainId: 10143,                    // Monad Testnet
-  rpcUrl: "https://testnet-rpc.monad.xyz",
-  explorerUrl: "https://testnet.monadexplorer.com",
-  contracts: {
-    complianceRegistry: "0x...",     // Deploy ComplianceRegistry.sol
-    auditProofStore: "0x...",        // Deploy AuditProofStore.sol
-  },
-};
-```
-
-**Replace in Layout.tsx:**
-```typescript
-// BEFORE (static):
-<span>Block #1,847,296</span>
-
-// AFTER (live):
-const [blockNumber, setBlockNumber] = useState(0);
-useEffect(() => {
-  const provider = new ethers.JsonRpcProvider(MONAD_CONFIG.rpcUrl);
-  provider.on("block", (block) => setBlockNumber(block));
-}, []);
-```
-
-### Phase 3: Smart Contract Deployment
-
-Deploy two contracts to Monad Testnet:
-
-1. **ComplianceRegistry.sol** - Stores compliance rules on-chain, emits events when rules are checked
-2. **AuditProofStore.sol** - Stores ZK proof hashes from Unlink, allows public verification
-
-### Phase 4: Real x402 Flow
-
-Wire up the HTTP 402 payment protocol:
-
-```typescript
-// In your backend (Express/Fastify):
-app.use("/api/premium/*", (req, res, next) => {
-  if (!req.headers["x-payment-receipt"]) {
-    return res.status(402).json({
-      payTo: "0x...",
-      amount: "245000000",  // 245 USDC (6 decimals)
-      token: "USDC",
-      network: "monad-testnet",
-    });
-  }
-  // Verify receipt, serve data
-  next();
+```javascript
+// Funds move: Private Pool → Burner → Vendor
+// On-chain: random address → vendor (no enterprise link!)
+const { txHash } = await unlink.burner.send(agentIndex, {
+  to: MOCK_USDC,
+  data: transferCalldata,
 });
 ```
 
-### Phase 5: Affiliate Settlement
+### 4. On-Chain Compliance Stamp
 
-Implement the 3-party commission split with partial-knowledge verification.
+After payment, a ZK proof hash is stamped on the ComplianceRegistry:
 
----
-
-## Key Concepts
-
-### x402 Protocol
-HTTP status code 402 ("Payment Required") repurposed for machine-to-machine payments. When an AI agent hits a paywalled API, the server responds with 402 + payment instructions. The agent's payment middleware (CompliAgent) handles the payment automatically.
-
-### ZK Compliance Stamps
-Zero-knowledge proofs that attest "this transaction is compliant" without revealing what was bought, how much was paid, or who the buyer is. In this demo, these are mocked as random hex hashes. In production, Unlink SDK would generate actual ZKPs.
-
-### Shielded vs Public Transactions
-- **Shielded** (marked with purple EyeOff icon): Amount, sender, and recipient are hidden on the public ledger via Unlink's privacy primitives
-- **Public** (marked with gray Eye icon): Standard transparent transaction visible on Monad explorer
-
-### Burner Accounts
-Ephemeral wallets created via Unlink SDK for each agent or transaction batch. They are unlinkable to the parent enterprise wallet, preventing transaction graph analysis.
-
-### Selective Disclosure
-Audit reports can prove aggregate compliance (e.g., "98.7% pass rate across 14,892 transactions") without exposing individual transaction details. This is critical for regulatory audits where auditors need assurance without seeing sensitive business data.
-
----
-
-## Environment Variables (Future)
-
-When integrating with real services, create a `.env` file:
-
-```env
-# Monad Testnet
-VITE_MONAD_RPC_URL=https://testnet-rpc.monad.xyz
-VITE_MONAD_CHAIN_ID=10143
-
-# Unlink SDK
-VITE_UNLINK_API_KEY=your_unlink_api_key
-VITE_UNLINK_NETWORK=monad-testnet
-
-# Smart Contracts (after deployment)
-VITE_COMPLIANCE_REGISTRY=0x...
-VITE_AUDIT_PROOF_STORE=0x...
-
-# Optional: Backend API
-VITE_API_BASE_URL=http://localhost:3001/api
+```javascript
+// Only the HASH goes on-chain — not the amount, sender, or vendor
+const proofHash = keccak256(encode([agentIndex, vendor, amount, timestamp]));
+await complianceRegistry.verifyAndStamp(txHash, proofHash);
 ```
 
-Access in code via `import.meta.env.VITE_MONAD_RPC_URL`.
+### 5. Dashboard Display
+
+The React frontend subscribes to on-chain events and displays everything:
+
+```javascript
+// useMonadContracts.js — listens for ComplianceStamped events
+contract.on("ComplianceStamped", (txHash, proofHash, timestamp) => {
+  setOnChainEvents(prev => [newEvent, ...prev]);
+});
+```
 
 ---
 
-## Troubleshooting
+## 📡 API Reference
 
-### Common Issues
+### Base URL: `http://localhost:3001`
 
-**`pnpm install` fails with peer dependency warnings:**
-React 18.3.1 is listed as a peer dependency. If you're using npm, add `--legacy-peer-deps`:
+#### Agent Management
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/api/agents/create` | Create a burner wallet for an agent |
+| `GET` | `/api/agents/:index/balance` | Get agent's MON + USDC balance |
+
+**Create Agent Request:**
+```json
+{ "agentIndex": 0 }
+```
+**Response:**
+```json
+{
+  "success": true,
+  "agentIndex": 0,
+  "burnerAddress": "0xc738dE92fC07f48fb769Fb2f0A7b18E9F85992C1"
+}
+```
+
+#### Funding (Privacy Pool)
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/api/funding/fund-agent` | Move tokens from private pool → agent burner |
+| `POST` | `/api/funding/sweep-back` | Return unused funds from agent → private pool |
+
+#### Payments
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/api/payments/agent-pay` | Execute payment from agent's burner |
+| `POST` | `/api/compliance/process` | Full flow: compliance check → pay → stamp |
+
+#### Monad Blockchain
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/monad/status` | Connection health, chain ID, block number, latency |
+| `GET` | `/api/monad/balance/:address` | Get MON balance for any address |
+| `GET` | `/api/monad/block` | Current block number |
+
+**Status Response:**
+```json
+{
+  "connected": true,
+  "chainId": 10143,
+  "blockNumber": 15957777,
+  "latency": 74
+}
+```
+
+#### Privacy Operations
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/api/privacy/stamp` | Stamp a shielded payment on-chain |
+| `POST` | `/api/privacy/batch-stamp` | Batch stamp multiple payments |
+| `POST` | `/api/privacy/format` | Format transaction for UI (strips sensitive data) |
+
+#### Admin & Info
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/api/admin/allowlist` | Add vendor address to allowlist |
+| `POST` | `/api/admin/budget` | Set agent budget limit |
+| `GET` | `/api/contracts` | All deployed contract addresses |
+
+---
+
+## 📜 Smart Contracts
+
+All contracts are deployed on **Monad Testnet** (Chain ID: 10143).
+
+### Deployed Addresses
+
+| Contract | Address | Purpose |
+|----------|---------|---------|
+| **MockUSDC** | `0x18c945c79f85f994A10356Aa4945371Ec4cD75D4` | Test stablecoin (6 decimals) |
+| **ComplianceRegistry** | `0xC37a8f0ca860914BfAce8361Bf0621EAEa14863F` | On-chain compliance stamps & rules |
+| **BudgetVault** | `0x56e8C1ED242396645376A92e6b7c6ECd2d871DD5` | Enterprise budget management |
+| **AffiliateSettler** | `0x9284cB50d7b7678be61F11A7688DC768f0E02A89` | Affiliate commission splits |
+
+### Contract Details
+
+#### MockUSDC.sol
+Simple ERC-20 with 6 decimals and owner-only `mint()`. Used as the test stablecoin for all agent payments.
+
+#### ComplianceRegistry.sol (V2)
+The heart of on-chain compliance:
+- `verifyAndStamp(txHash, proofHash)` — stamp a single transaction
+- `batchVerifyAndStamp(txHashes[], proofHashes[])` — stamp up to 50 in one tx
+- `isCompliant(txHash)` — check if a tx has been stamped
+- `setRule(name, ruleType, value)` / `updateRule()` / `toggleRule()` — manage rules
+- `emitAudit(txHash, action, details)` — emit audit events
+
+5 rules are configured on-chain: `budget_cap`, `vendor_allowlist`, `aml_threshold`, `rate_limit`, `kyc_check`.
+
+#### BudgetVault.sol
+Enterprise budget management:
+- `depositBudget(amount)` — CFO deposits USDC
+- `allocateAgentBudget(agent, amount)` — assign budget per agent
+- `executeAgentPayment(agent, vendor, amount)` — pay within budget limits
+- `getAgentUtilization(agent)` — returns (allocated, spent, remaining, active)
+- `emergencyWithdraw(amount)` — owner-only emergency withdrawal
+
+#### AffiliateSettler.sol
+Handles affiliate commission programs:
+- `registerProgram(name, affiliate, commissionBps)` — create program (e.g. 5%)
+- `processPayment(programId, vendor, amount)` — splits payment: 95% vendor, 5% affiliate
+- Max commission: 50% (5000 bps)
+
+### Deploying Contracts
+
 ```bash
-npm install --legacy-peer-deps
+cd contracts
+
+# Deploy Phase 1 (MockUSDC, ComplianceRegistry, BudgetVault)
+npx hardhat run scripts/deploy.js --network monad-testnet --config hardhat.config.cjs
+
+# Deploy Phase 4 (ComplianceRegistry V2, AffiliateSettler)
+npx hardhat run scripts/deploy-phase4.js --network monad-testnet --config hardhat.config.cjs
+
+# Setup: deposit budget + set rules
+npx hardhat run scripts/deposit-budget.js --network monad-testnet --config hardhat.config.cjs
+npx hardhat run scripts/phase4-setup-v2.js --network monad-testnet --config hardhat.config.cjs
 ```
-
-**Tailwind classes not applying:**
-This project uses Tailwind CSS v4 with `@tailwindcss/vite` plugin. Do NOT create a `tailwind.config.js` - configuration is handled in `theme.css` and `tailwind.css`.
-
-**Route not found / blank page:**
-React Router is in Data mode (`createBrowserRouter`). Make sure your dev server supports client-side routing (Vite does by default). For production, configure your hosting to redirect all routes to `index.html`.
-
-**Fonts not loading:**
-Check that `fonts.css` imports are working. The app uses Google Fonts (Inter + Roboto Mono) loaded via CDN. If offline, download the fonts and update the import paths.
-
-**`sonner` toast not appearing:**
-The `<Toaster>` component is rendered in `Layout.tsx`. If you're testing a page outside the Layout, toasts won't show. Make sure your component is rendered as a child of the Layout route.
 
 ---
 
-## License
+## 🔧 Tech Stack
 
-Built for hackathon demonstration purposes. See your specific hackathon rules for licensing requirements.
+| Layer | Technology | Version | Purpose |
+|-------|-----------|---------|---------|
+| **Frontend** | React | 18.3.1 | UI framework |
+| | Vite | 6.3.5 | Build tool & dev server |
+| | Tailwind CSS | 4.1.12 | Utility-first styling |
+| | Radix UI / shadcn | Latest | Accessible UI primitives |
+| | ethers.js | 6.16.0 | Blockchain interaction |
+| | Recharts | 2.15.2 | Data visualization |
+| | React Router | 7.13.0 | Client-side routing |
+| | Sonner | 2.0.3 | Toast notifications |
+| **Backend** | Express | 5.x | HTTP server |
+| | ethers.js | 6.16.0 | Monad RPC interaction |
+| | @unlink-xyz/node | 0.1.8 | Privacy SDK (ZK proofs, burners) |
+| | better-sqlite3 | via SDK | Wallet storage |
+| **Contracts** | Solidity | 0.8.20 | Smart contract language |
+| | Hardhat | 2.28.6 | Development framework |
+| | OpenZeppelin | 5.x | Audited contract libraries |
+| **Blockchain** | Monad Testnet | Chain 10143 | L1 with ~400ms blocks |
 
-## Reference Documents
+---
 
-- `/src/imports/compliagent-blueprint.md` - Full architecture blueprint with all flows, contracts, and integration details
-- `/src/imports/compliagent-dashboard.md` - Dashboard UI specification with wireframes and component requirements
+## 🧪 Testing
+
+### Manual Testing
+
+```bash
+# Test Monad connection
+curl http://localhost:3001/api/monad/status
+
+# Create a burner agent
+curl -X POST http://localhost:3001/api/agents/create \
+  -H "Content-Type: application/json" \
+  -d '{"agentIndex": 0}'
+
+# Check agent balance
+curl http://localhost:3001/api/agents/0/balance
+
+# Get contract addresses
+curl http://localhost:3001/api/contracts
+```
+
+### Contract Interaction Scripts
+
+```bash
+cd contracts
+
+# Run Phase 2 interactions (allocate budget, pay vendor, stamp)
+npx hardhat run scripts/phase2-interactions.js --network monad-testnet --config hardhat.config.cjs
+```
+
+---
+
+## 🌐 Frontend Pages
+
+| Route | Component | Description |
+|-------|-----------|-------------|
+| `/` | `Dashboard` | Main dashboard — stats, live chain data, compliance rules, budget, events |
+| `/agents` | `AgentManager` | Create, monitor, and manage AI agents |
+| `/rules` | `ComplianceRules` | Configure compliance rules and vendor allowlists |
+| `/audit` | `AuditReports` | View audit reports with ZK proof verification |
+| `/transactions` | `TransactionFeed` | Live transaction feed with privacy/public badges |
+| `/demo` | `AgentDemo` | Interactive demo of x402 agent purchase and affiliate flows |
+
+---
+
+## 🔑 Key Design Decisions
+
+### Why Monad?
+- **~400ms block times** — near-instant transaction confirmation
+- **EVM compatible** — standard Solidity, ethers.js, Hardhat tooling
+- **High throughput** — supports parallel execution for batch compliance stamps
+- **`eth_sendTransactionSync`** — synchronous transaction submission (with fallback)
+
+### Why Unlink?
+- **Zero-knowledge privacy pool** — enterprise deposits become unlinkable
+- **Burner wallets** — derived deterministically, disposable after use
+- **ESM SDK** — modern JavaScript, used via dynamic `import()` in CommonJS backend
+- **On-chain privacy** — observers can't trace agent payments to the enterprise
+
+### ESM/CJS Compatibility
+The Unlink SDK (`@unlink-xyz/node` and `@unlink-xyz/core`) ships as ESM-only (`"type": "module"`). Our backend is CommonJS. Solution: **dynamic `import()`** inside the lazy singleton in `unlink-service.js`.
+
+### Rate Limiting
+Monad's public testnet RPC allows ~25 requests/second. Our rate limiter uses a sliding-window token bucket to stay within limits without dropping requests — it queues and retries automatically.
+
+---
+
+## 📊 Dashboard Features
+
+- **Live Block Counter** — animated green pulse showing real-time Monad block height (2s polling)
+- **Stats Grid** — active agents, compliance rate, total budget, avg settlement time
+- **On-Chain Events** — real-time ComplianceStamped + Budget events with explorer links
+- **Compliance Rules Panel** — 5 on-chain rules with active/disabled badges
+- **Transaction Table** — tx hashes link to Monad explorer, privacy badges
+- **Agent Sidebar** — status indicators (active/idle/under review)
+- **Quick Actions** — Deploy Agent, Generate Audit Report, View Settlement
+
+---
+
+## 🤝 Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+
+```bash
+# Fork the repo, create a feature branch
+git checkout -b feature/your-feature
+
+# Make changes, commit with conventional commits
+git commit -m "feat: add new compliance rule type"
+
+# Push and create a Pull Request
+git push origin feature/your-feature
+```
+
+---
+
+## 📝 License
+
+This project was built for the **Unlink x Monad Hackathon**.
+
+---
+
+## 🔗 Links
+
+- **GitHub**: [github.com/roshaninfordham/CompliagentAi](https://github.com/roshaninfordham/CompliagentAi)
+- **Monad Testnet Explorer**: [testnet.monadexplorer.com](https://testnet.monadexplorer.com)
+- **Unlink SDK Docs**: [docs.unlink.xyz](https://docs.unlink.xyz)
+- **Monad Docs**: [docs.monad.xyz](https://docs.monad.xyz)
+
+---
+
+<p align="center">
+  Built with 💜 for the Unlink x Monad Hackathon
+</p>

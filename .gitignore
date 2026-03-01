@@ -1,0 +1,30 @@
+node_modules
+
+# Sensitive keys — NEVER commit
+agent-wallets.json
+.env
+*.key
+
+# Build artifacts
+dist/
+build/
+contracts/artifacts/
+contracts/cache/
+
+# Unlink SDK wallet storage
+wallet.db
+wallet.db-shm
+wallet.db-wal
+test-wallet.db
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor files
+.vscode/settings.json
+*.swp
+*.swo
+
+# Lock files (backend uses npm, root uses pnpm)
+backend/package-lock.json
