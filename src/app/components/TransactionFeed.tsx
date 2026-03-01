@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   Search,
   Filter,
@@ -13,6 +13,13 @@ import {
   RefreshCw,
 } from "lucide-react";
 import { transactions, type Transaction } from "./mock-data";
+import { useMonadContracts } from "../../hooks/useMonadContracts.js";
+import { useBlockNumber } from "../../hooks/useBlockNumber";
+
+/** Extended transaction type that tracks whether the entry came from on-chain events */
+interface FeedTransaction extends Transaction {
+  onChain?: boolean;
+}
 
 function ComplianceBadge({ status }: { status: string }) {
   const config: Record<string, { bg: string; text: string; dot: string }> = {
@@ -29,19 +36,97 @@ function ComplianceBadge({ status }: { status: string }) {
   );
 }
 
+function OnChainBadge() {
+  return (
+    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] bg-emerald-100 text-emerald-800 border border-emerald-200">
+      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+      On-Chain
+    </span>
+  );
+}
+
 export function TransactionFeed() {
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
-  const [selectedTx, setSelectedTx] = useState<Transaction | null>(null);
+  const [selectedTx, setSelectedTx] = useState<FeedTransaction | null>(null);
   const [isLive, setIsLive] = useState(true);
-  const [txList, setTxList] = useState(transactions);
+  const [txList, setTxList] = useState<FeedTransaction[]>(transactions);
+  const [feedMode, setFeedMode] = useState<"simulated" | "onchain">("simulated");
 
-  // Simulate new transactions arriving
+  // On-chain hooks
+  const { complianceEvents } = useMonadContracts();
+  const { blockNumber: currentBlockNumber } = useBlockNumber();
+
+  // Track which on-chain events we've already ingested so we don't duplicate
+  const processedEventsRef = useRef<Set<string>>(new Set());
+
+  // Use the real block number as a base for simulated transactions, falling back to a high default
+  const baseBlockNumber = currentBlockNumber ?? 18_472_960;
+  const simBlockCounterRef = useRef(0);
+
+  // Auto-switch to on-chain mode when real events arrive
+  useEffect(() => {
+    if (complianceEvents.length > 0 && feedMode === "simulated") {
+      setFeedMode("onchain");
+    }
+  }, [complianceEvents, feedMode]);
+
+  // Ingest real ComplianceStamped events into the feed
+  useEffect(() => {
+    if (complianceEvents.length === 0) return;
+
+    const newEntries: FeedTransaction[] = [];
+
+    for (const evt of complianceEvents) {
+      const key = `${evt.txHash}-${evt.blockNumber}`;
+      if (processedEventsRef.current.has(key)) continue;
+      processedEventsRef.current.add(key);
+
+      const txHashStr = typeof evt.txHash === "string" ? evt.txHash : String(evt.txHash);
+      const proofHashStr = typeof evt.proofHash === "string" ? evt.proofHash : String(evt.proofHash);
+
+      const shortTxHash =
+        txHashStr.length > 14
+          ? `${txHashStr.slice(0, 6)}...${txHashStr.slice(-4)}`
+          : txHashStr;
+
+      const shortProofHash =
+        proofHashStr.length > 14
+          ? `${proofHashStr.slice(0, 6)}...${proofHashStr.slice(-4)}`
+          : proofHashStr;
+
+      newEntries.push({
+        id: `onchain-${key}`,
+        agentName: "On-Chain Agent",
+        agentId: "onchain",
+        vendor: "ComplianceRegistry",
+        amount: 0,
+        status: "compliant",
+        txHash: shortTxHash,
+        timestamp: new Date(evt.timestamp * 1000),
+        shielded: true,
+        type: "ComplianceStamped",
+        proofHash: shortProofHash,
+        blockNumber: evt.blockNumber,
+        onChain: true,
+      });
+    }
+
+    if (newEntries.length > 0) {
+      setTxList((prev) => [...newEntries, ...prev].slice(0, 50));
+    }
+  }, [complianceEvents]);
+
+  // Simulate new transactions arriving (fallback / simulated mode)
   useEffect(() => {
     if (!isLive) return;
+    if (feedMode === "onchain") return; // don't generate fake data in on-chain mode
+
     const interval = setInterval(() => {
+      simBlockCounterRef.current += 1;
+
       setTxList((prev) => {
-        const newTx: Transaction = {
+        const newTx: FeedTransaction = {
           id: `tx-live-${Date.now()}`,
           agentName: ["Alpha Data Scout", "Beta Market Analyzer", "Theta Price Oracle", "Zeta Geo Intel"][
             Math.floor(Math.random() * 4)
@@ -56,14 +141,15 @@ export function TransactionFeed() {
           timestamp: new Date(),
           shielded: Math.random() > 0.15,
           type: "x402 Purchase",
-          proofHash: `0xZK${Math.random().toString(16).slice(2, 8)}`,
-          blockNumber: 1847296 + Math.floor(Math.random() * 10),
+          proofHash: `0x${Math.random().toString(16).slice(2, 10)}`,
+          blockNumber: baseBlockNumber + simBlockCounterRef.current,
+          onChain: false,
         };
         return [newTx, ...prev].slice(0, 50);
       });
     }, 5000);
     return () => clearInterval(interval);
-  }, [isLive]);
+  }, [isLive, feedMode, baseBlockNumber]);
 
   const filteredTx = txList.filter((tx) => {
     const matchesSearch =
@@ -102,9 +188,36 @@ export function TransactionFeed() {
             <span className={`w-1.5 h-1.5 rounded-full ${isLive ? "bg-emerald-500 animate-pulse" : "bg-gray-400"}`} />
             {isLive ? "Live" : "Paused"}
           </button>
+          {/* Mode toggle */}
+          <div className="flex gap-0.5 bg-muted border border-border rounded-full p-0.5">
+            <button
+              onClick={() => setFeedMode("simulated")}
+              className={`px-2.5 py-1 rounded-full text-[11px] transition-colors ${
+                feedMode === "simulated"
+                  ? "bg-amber-100 text-amber-800"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              Simulated
+            </button>
+            <button
+              onClick={() => setFeedMode("onchain")}
+              className={`px-2.5 py-1 rounded-full text-[11px] transition-colors ${
+                feedMode === "onchain"
+                  ? "bg-emerald-100 text-emerald-800"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              On-Chain
+            </button>
+          </div>
         </div>
         <button
-          onClick={() => setTxList(transactions)}
+          onClick={() => {
+            setTxList(transactions);
+            processedEventsRef.current.clear();
+            simBlockCounterRef.current = 0;
+          }}
           className="flex items-center gap-2 text-[13px] text-muted-foreground hover:text-foreground transition-colors"
         >
           <RefreshCw className="w-4 h-4" />
@@ -180,7 +293,10 @@ export function TransactionFeed() {
                 onClick={() => setSelectedTx(tx)}
               >
                 <td className="px-5 py-3.5">
-                  <p className="text-[13px] text-foreground">{tx.agentName}</p>
+                  <div className="flex items-center gap-2">
+                    <p className="text-[13px] text-foreground">{tx.agentName}</p>
+                    {(tx as FeedTransaction).onChain && <OnChainBadge />}
+                  </div>
                 </td>
                 <td className="px-5 py-3.5">
                   <p className="text-[13px] text-muted-foreground">{tx.vendor}</p>
@@ -236,7 +352,10 @@ export function TransactionFeed() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
           <div className="bg-card rounded-2xl border border-border w-full max-w-md mx-4 shadow-xl">
             <div className="flex items-center justify-between p-5 border-b border-border">
-              <h3 className="text-[16px] text-foreground">Transaction Details</h3>
+              <div className="flex items-center gap-2">
+                <h3 className="text-[16px] text-foreground">Transaction Details</h3>
+                {(selectedTx as FeedTransaction).onChain && <OnChainBadge />}
+              </div>
               <button
                 onClick={() => setSelectedTx(null)}
                 className="p-1.5 rounded-md hover:bg-muted transition-colors"
@@ -306,6 +425,15 @@ export function TransactionFeed() {
                     <span className="text-[12px] text-emerald-600 flex items-center gap-1" style={{ fontFamily: "'Roboto Mono', monospace" }}>
                       <CheckCircle2 className="w-3 h-3" />
                       {selectedTx.proofHash}
+                    </span>
+                  </div>
+                )}
+                {(selectedTx as FeedTransaction).onChain && (
+                  <div className="flex justify-between">
+                    <span className="text-[12px] text-muted-foreground">Source</span>
+                    <span className="text-[12px] text-emerald-600 flex items-center gap-1">
+                      <CheckCircle2 className="w-3 h-3" />
+                      Verified on-chain event
                     </span>
                   </div>
                 )}

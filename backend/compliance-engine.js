@@ -1,5 +1,6 @@
 const { getUnlink } = require("./unlink-service");
 const { ethers } = require("ethers");
+const { stampShieldedPayment } = require("./privacy-helpers");
 
 // Your deployed contract addresses on Monad testnet
 const COMPLIANCE_REGISTRY_ADDR = "0xC37a8f0ca860914BfAce8361Bf0621EAEa14863F";
@@ -99,14 +100,31 @@ async function processAgentPayment(agentIndex, vendorAddress, amount) {
     )
   );
 
-  // Step 5: Stamp the compliance record on-chain
-  // (You'd call your ComplianceRegistry contract here)
-  // For now, return the proof data
+  // Step 5: Stamp the compliance record on-chain via ComplianceRegistry
+  let stampResult = null;
+  const signerKey = process.env.DEPLOYER_PRIVATE_KEY;
+  if (signerKey) {
+    try {
+      stampResult = await stampShieldedPayment(
+        txHash,
+        agentIndex,
+        vendorAddress,
+        amount,
+        signerKey
+      );
+    } catch (err) {
+      console.error("On-chain stamp failed (non-fatal):", err.message);
+    }
+  } else {
+    console.warn("DEPLOYER_PRIVATE_KEY not set — skipping on-chain stamp");
+  }
 
   return {
     success: true,
     txHash,
-    proofHash,
+    proofHash: stampResult?.proofHash || proofHash,
+    stampTxHash: stampResult?.stampTxHash || null,
+    blockNumber: stampResult ? "stamped" : null,
     compliance: {
       checked: true,
       timestamp: complianceResult.timestamp,

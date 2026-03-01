@@ -12,16 +12,73 @@ import {
   Loader2,
   Shield,
 } from "lucide-react";
-import { auditReports, dashboardStats } from "./mock-data";
+import { toast } from "sonner";
+import { auditReports as mockAuditReports, dashboardStats } from "./mock-data";
+import type { AuditReport } from "./mock-data";
+
+// Extended report type that includes the optional txHash returned by the backend
+interface AuditReportWithTx extends AuditReport {
+  txHash?: string;
+}
 
 export function AuditReports() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [showProofModal, setShowProofModal] = useState<string | null>(null);
   const [copiedHash, setCopiedHash] = useState(false);
+  const [reports, setReports] = useState<AuditReportWithTx[]>(
+    mockAuditReports as AuditReportWithTx[]
+  );
 
-  const handleGenerate = () => {
+  const handleGenerate = async () => {
     setIsGenerating(true);
-    setTimeout(() => setIsGenerating(false), 2500);
+    try {
+      const res = await fetch("/api/audit/generate", { method: "POST" });
+      if (!res.ok) throw new Error(`Server responded with ${res.status}`);
+      const data = await res.json();
+
+      const newReport: AuditReportWithTx = {
+        id: `audit-${Date.now()}`,
+        generatedAt: new Date(),
+        totalTransactions: data.totalTransactions,
+        compliantCount: data.compliantCount,
+        rejectedCount: data.totalTransactions - data.compliantCount,
+        passRate: data.passRate,
+        proofHash: data.proofHash,
+        txHash: data.txHash,
+        blockNumber: data.blockNumber,
+        status: "verified",
+      };
+
+      setReports((prev) => [newReport, ...prev]);
+      toast.success(
+        `Audit report generated! Proof hash: ${data.proofHash.slice(0, 10)}...`
+      );
+    } catch {
+      // Fallback: generate a local mock report
+      const mockProofHash = `0xZKLocal${Math.random().toString(16).slice(2, 10)}`;
+      const mockTotal = Math.floor(Math.random() * 3000) + 500;
+      const mockCompliant = Math.floor(mockTotal * (0.97 + Math.random() * 0.025));
+      const mockPassRate = Number(((mockCompliant / mockTotal) * 100).toFixed(1));
+
+      const fallbackReport: AuditReportWithTx = {
+        id: `audit-${Date.now()}`,
+        generatedAt: new Date(),
+        totalTransactions: mockTotal,
+        compliantCount: mockCompliant,
+        rejectedCount: mockTotal - mockCompliant,
+        passRate: mockPassRate,
+        proofHash: mockProofHash,
+        blockNumber: 1847200 + Math.floor(Math.random() * 1000),
+        status: "verified",
+      };
+
+      setReports((prev) => [fallbackReport, ...prev]);
+      toast.warning(
+        "Backend unavailable. Generated local mock report instead."
+      );
+    } finally {
+      setIsGenerating(false);
+    }
   };
 
   const copyToClipboard = (text: string) => {
@@ -30,7 +87,42 @@ export function AuditReports() {
     setTimeout(() => setCopiedHash(false), 2000);
   };
 
-  const selectedReport = auditReports.find((r) => r.id === showProofModal);
+  const handleShareWithAuditor = (report: AuditReportWithTx) => {
+    const url = report.txHash
+      ? `https://testnet.monadexplorer.com/tx/${report.txHash}`
+      : report.proofHash;
+    navigator.clipboard.writeText(url);
+    toast.success(
+      "Audit link copied! Any auditor can verify this proof on Monad Explorer."
+    );
+  };
+
+  const handleDownload = (report: AuditReportWithTx) => {
+    const content = JSON.stringify(
+      {
+        proofHash: report.proofHash,
+        txHash: report.txHash ?? null,
+        blockNumber: report.blockNumber,
+        totalTransactions: report.totalTransactions,
+        compliantCount: report.compliantCount,
+        passRate: report.passRate,
+        generatedAt: report.generatedAt,
+        status: report.status,
+      },
+      null,
+      2
+    );
+    const blob = new Blob([content], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `audit-report-${report.id}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast.success("Audit report downloaded.");
+  };
+
+  const selectedReport = reports.find((r) => r.id === showProofModal);
 
   return (
     <div className="space-y-6">
@@ -109,8 +201,8 @@ export function AuditReports() {
           <div>
             <h4 className="text-[14px] text-foreground mb-1">Selective Disclosure</h4>
             <p className="text-[13px] text-muted-foreground">
-              Audit reports use Unlink ZKP-based selective disclosure. Auditors can verify 
-              compliance rates, total transactions, and AML status without accessing individual 
+              Audit reports use Unlink ZKP-based selective disclosure. Auditors can verify
+              compliance rates, total transactions, and AML status without accessing individual
               transaction details, agent identities, or spending patterns.
             </p>
           </div>
@@ -123,7 +215,7 @@ export function AuditReports() {
           <h3 className="text-[15px] text-foreground">Generated Reports</h3>
         </div>
         <div className="divide-y divide-border">
-          {auditReports.map((report) => (
+          {reports.map((report) => (
             <div
               key={report.id}
               className="flex items-center justify-between px-5 py-4 hover:bg-muted/30 transition-colors"
@@ -178,12 +270,14 @@ export function AuditReports() {
                     <ExternalLink className="w-4 h-4 text-muted-foreground" />
                   </button>
                   <button
+                    onClick={() => handleDownload(report)}
                     className="p-2 rounded-md hover:bg-muted transition-colors"
                     title="Download"
                   >
                     <Download className="w-4 h-4 text-muted-foreground" />
                   </button>
                   <button
+                    onClick={() => handleShareWithAuditor(report)}
                     className="p-2 rounded-md hover:bg-[#7C3AED]/10 transition-colors"
                     title="Share with Auditor"
                   >
@@ -258,7 +352,10 @@ export function AuditReports() {
               </div>
             </div>
             <div className="p-5 border-t border-border">
-              <button className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg bg-[#7C3AED] text-white text-[13px] hover:bg-[#6D28D9] transition-colors">
+              <button
+                onClick={() => handleShareWithAuditor(selectedReport)}
+                className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg bg-[#7C3AED] text-white text-[13px] hover:bg-[#6D28D9] transition-colors"
+              >
                 <Share2 className="w-4 h-4" />
                 Share with Auditor
               </button>

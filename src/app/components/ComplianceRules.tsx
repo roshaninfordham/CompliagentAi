@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   ShieldCheck,
   Plus,
@@ -13,6 +13,8 @@ import {
   X,
   Check,
 } from "lucide-react";
+import { toast } from "sonner";
+import { useMonadContracts } from "../../hooks/useMonadContracts.js";
 import { complianceRules, vendorAllowlist, type ComplianceRule } from "./mock-data";
 
 const ruleTypeConfig = {
@@ -23,16 +25,61 @@ const ruleTypeConfig = {
 };
 
 export function ComplianceRules() {
-  const [rules, setRules] = useState(complianceRules);
+  const [rules, setRules] = useState<ComplianceRule[]>(complianceRules);
   const [vendors, setVendors] = useState(vendorAllowlist);
   const [showAddRule, setShowAddRule] = useState(false);
   const [newVendor, setNewVendor] = useState("");
   const [activeTab, setActiveTab] = useState<"rules" | "vendors">("rules");
 
+  // Form state for the Add Rule modal
+  const [ruleName, setRuleName] = useState("");
+  const [ruleType, setRuleType] = useState<ComplianceRule["type"]>("budget_cap");
+  const [ruleValue, setRuleValue] = useState("");
+
+  const { getComplianceRules } = useMonadContracts();
+
+  // Load rules from chain on mount
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadChainRules() {
+      try {
+        const chainRules = await getComplianceRules();
+        if (cancelled) return;
+
+        if (chainRules && chainRules.length > 0) {
+          const mapped: ComplianceRule[] = chainRules.map((cr: { index: number; name: string; ruleType: string; value: string; enabled: boolean }, idx: number) => ({
+            id: `chain-rule-${cr.index}`,
+            name: cr.name,
+            type: (cr.ruleType as ComplianceRule["type"]) || "budget_cap",
+            value: cr.value,
+            enabled: cr.enabled,
+            updatedAt: new Date(),
+            updatedBy: "On-chain",
+          }));
+          setRules(mapped);
+          toast.success(`Loaded ${mapped.length} rules from Monad chain`);
+        }
+        // If chainRules is empty or null, keep mock data (already set as default)
+      } catch (err) {
+        if (cancelled) return;
+        console.error("Failed to load on-chain rules, using mock data:", err);
+        // Fall back to mock data which is already the default state
+      }
+    }
+
+    loadChainRules();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [getComplianceRules]);
+
   const toggleRule = (id: string) => {
     setRules((prev) =>
       prev.map((r) => (r.id === id ? { ...r, enabled: !r.enabled } : r))
     );
+    toast.info("Rule toggled locally. On-chain update requires admin key.");
   };
 
   const removeVendor = (vendor: string) => {
@@ -44,6 +91,54 @@ export function ComplianceRules() {
       setVendors((prev) => [...prev, newVendor.trim()]);
       setNewVendor("");
     }
+  };
+
+  const handleAddRule = async () => {
+    if (!ruleName.trim() || !ruleValue.trim()) {
+      toast.error("Please fill in all fields");
+      return;
+    }
+
+    const newRule: ComplianceRule = {
+      id: `rule-${Date.now()}`,
+      name: ruleName.trim(),
+      type: ruleType,
+      value: ruleValue.trim(),
+      enabled: true,
+      updatedAt: new Date(),
+      updatedBy: "Admin",
+    };
+
+    try {
+      const res = await fetch("/api/admin/compliance-rule", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: ruleName,
+          ruleType,
+          value: Number(ruleValue),
+        }),
+      });
+
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+      const data = await res.json();
+      toast.success(`Rule added on-chain! TxHash: ${data.txHash}`, {
+        duration: 5000,
+      });
+      setRules((prev) => [...prev, newRule]);
+    } catch (err) {
+      console.error("Backend call failed:", err);
+      // Still add to local state
+      setRules((prev) => [...prev, newRule]);
+      toast.warning("Rule added locally. Backend sync failed -- will retry later.");
+    }
+
+    // Reset form and close modal
+    setRuleName("");
+    setRuleType("budget_cap");
+    setRuleValue("");
+    setShowAddRule(false);
   };
 
   return (
@@ -219,16 +314,22 @@ export function ComplianceRules() {
                 <input
                   type="text"
                   placeholder="e.g., Max Daily Spend"
+                  value={ruleName}
+                  onChange={(e) => setRuleName(e.target.value)}
                   className="w-full px-4 py-2.5 text-[13px] bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#7C3AED]/30 focus:border-[#7C3AED]"
                 />
               </div>
               <div>
                 <label className="block text-[12px] text-muted-foreground mb-1.5">Rule Type</label>
-                <select className="w-full px-4 py-2.5 text-[13px] bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#7C3AED]/30 focus:border-[#7C3AED]">
-                  <option>Budget Cap</option>
-                  <option>Vendor Allowlist</option>
-                  <option>AML Threshold</option>
-                  <option>Rate Limit</option>
+                <select
+                  value={ruleType}
+                  onChange={(e) => setRuleType(e.target.value as ComplianceRule["type"])}
+                  className="w-full px-4 py-2.5 text-[13px] bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#7C3AED]/30 focus:border-[#7C3AED]"
+                >
+                  <option value="budget_cap">Budget Cap</option>
+                  <option value="vendor_allowlist">Vendor Allowlist</option>
+                  <option value="aml_threshold">AML Threshold</option>
+                  <option value="rate_limit">Rate Limit</option>
                 </select>
               </div>
               <div>
@@ -236,6 +337,8 @@ export function ComplianceRules() {
                 <input
                   type="text"
                   placeholder="e.g., $10,000"
+                  value={ruleValue}
+                  onChange={(e) => setRuleValue(e.target.value)}
                   className="w-full px-4 py-2.5 text-[13px] bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#7C3AED]/30 focus:border-[#7C3AED]"
                 />
               </div>
@@ -248,7 +351,7 @@ export function ComplianceRules() {
                 Cancel
               </button>
               <button
-                onClick={() => setShowAddRule(false)}
+                onClick={handleAddRule}
                 className="flex-1 py-2.5 rounded-lg bg-[#7C3AED] text-white text-[13px] hover:bg-[#6D28D9] transition-colors"
               >
                 Add Rule

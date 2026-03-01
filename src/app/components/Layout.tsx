@@ -13,28 +13,30 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 import { Toaster } from "sonner";
+import { useBlockNumber } from "../../hooks/useBlockNumber";
 
 const navItems = [
-  { to: "/", icon: LayoutDashboard, label: "Dashboard" },
-  { to: "/demo", icon: Play, label: "Live Demo" },
-  { to: "/agents", icon: Bot, label: "Agents" },
-  { to: "/rules", icon: ShieldCheck, label: "Compliance Rules" },
-  { to: "/audit", icon: FileText, label: "Audit Reports" },
-  { to: "/transactions", icon: Activity, label: "Transactions" },
+  { to: "/dashboard", icon: LayoutDashboard, label: "Dashboard" },
+  { to: "/dashboard/demo", icon: Play, label: "Live Demo" },
+  { to: "/dashboard/agents", icon: Bot, label: "Agents" },
+  { to: "/dashboard/rules", icon: ShieldCheck, label: "Compliance Rules" },
+  { to: "/dashboard/audit", icon: FileText, label: "Audit Reports" },
+  { to: "/dashboard/transactions", icon: Activity, label: "Transactions" },
 ];
 
 export function Layout() {
   const location = useLocation();
   const [notifications] = useState(3);
+  const { blockNumber } = useBlockNumber();
 
   const getPageTitle = () => {
     const path = location.pathname;
-    if (path === "/") return "Dashboard Overview";
-    if (path === "/agents") return "Agent Manager";
-    if (path === "/rules") return "Compliance Rules";
-    if (path === "/audit") return "Audit Reports";
-    if (path === "/transactions") return "Transaction Feed";
-    if (path === "/demo") return "Live Demo";
+    if (path === "/dashboard") return "Dashboard Overview";
+    if (path === "/dashboard/agents") return "Agent Manager";
+    if (path === "/dashboard/rules") return "Compliance Rules";
+    if (path === "/dashboard/audit") return "Audit Reports";
+    if (path === "/dashboard/transactions") return "Transaction Feed";
+    if (path === "/dashboard/demo") return "Live Demo";
     return "CompliAgent";
   };
 
@@ -65,7 +67,7 @@ export function Layout() {
             <NavLink
               key={item.to}
               to={item.to}
-              end={item.to === "/"}
+              end={item.to === "/dashboard"}
               className={({ isActive }) =>
                 `flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all text-[14px] ${
                   isActive
@@ -90,7 +92,7 @@ export function Layout() {
               </span>
             </div>
             <p className="text-[11px] text-muted-foreground" style={{ fontFamily: "'Roboto Mono', monospace" }}>
-              Block #1,847,296
+              {blockNumber !== null ? `Block #${blockNumber.toLocaleString()}` : "Connecting..."}
             </p>
           </div>
         </div>

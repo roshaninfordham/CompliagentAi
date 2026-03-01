@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import {
   Bot,
   ArrowUpRight,
@@ -25,6 +25,7 @@ import { toast } from "sonner";
 import { ethers } from "ethers";
 import { useCompliAgent } from "../../hooks/useCompliAgent";
 import { useMonadContracts } from "../../hooks/useMonadContracts.js";
+import { useBlockNumber } from "../../hooks/useBlockNumber";
 import { MONAD_CONFIG } from "../../config/monad";
 import { getExplorerUrl } from "../../utils/explorer";
 
@@ -118,10 +119,9 @@ function PrivacyBadge({ shielded }: { shielded: boolean }) {
 
 export function Dashboard() {
   const [liveTxCount, setLiveTxCount] = useState(dashboardStats.totalTransactions);
-  const [blockNumber, setBlockNumber] = useState<number | null>(null);
+  const { blockNumber } = useBlockNumber();
   const [onChainRules, setOnChainRules] = useState<any[]>([]);
   const [totalStamped, setTotalStamped] = useState<number | null>(null);
-  const providerRef = useRef<ethers.JsonRpcProvider | null>(null);
   const navigate = useNavigate();
   const [mnemonic, setMnemonic] = useState<string | null>(null);
 
@@ -193,27 +193,7 @@ export function Dashboard() {
     toast.success("Deposited 100 USDC to private pool");
   }
 
-  // Live block number polling (every 2s)
-  useEffect(() => {
-    if (!providerRef.current) {
-      providerRef.current = new ethers.JsonRpcProvider(MONAD_CONFIG.rpcUrl);
-    }
-    const provider = providerRef.current;
-
-    // Initial fetch
-    provider.getBlockNumber().then(setBlockNumber).catch(console.error);
-
-    const blockInterval = setInterval(async () => {
-      try {
-        const block = await provider.getBlockNumber();
-        setBlockNumber(block);
-      } catch (err) {
-        console.error("Block polling error:", err);
-      }
-    }, 2000);
-
-    return () => clearInterval(blockInterval);
-  }, []);
+  // Block number now comes from shared BlockNumberProvider via useBlockNumber()
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -222,8 +202,11 @@ export function Dashboard() {
     return () => clearInterval(interval);
   }, []);
 
+  const liveBudgetUsed = availableBudget
+    ? dashboardStats.totalBudget - Number(availableBudget)
+    : dashboardStats.budgetUsed;
   const budgetPercent = Math.round(
-    (dashboardStats.budgetUsed / dashboardStats.totalBudget) * 100
+    (liveBudgetUsed / dashboardStats.totalBudget) * 100
   );
 
   const poolBalance = balances?.[MOCK_USDC]
@@ -673,7 +656,7 @@ export function Dashboard() {
         <button
           onClick={() => {
             toast.success("Navigating to Agent Deployment...");
-            navigate("/agents");
+            navigate("/dashboard/agents");
           }}
           className="flex items-center gap-3 bg-[#7C3AED] text-white rounded-xl px-5 py-4 hover:bg-[#6D28D9] transition-colors"
         >
@@ -683,7 +666,7 @@ export function Dashboard() {
         <button
           onClick={() => {
             toast.success("Navigating to Audit Reports...");
-            navigate("/audit");
+            navigate("/dashboard/audit");
           }}
           className="flex items-center gap-3 bg-card text-foreground rounded-xl px-5 py-4 border border-border hover:bg-muted/50 transition-colors"
         >

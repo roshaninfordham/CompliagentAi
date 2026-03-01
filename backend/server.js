@@ -7,6 +7,7 @@ const { processAgentPayment, complianceRules } = require("./compliance-engine");
 const { checkConnection, getBalance, getBlockNumber } = require("./monad-provider");
 const { stampShieldedPayment, batchStampPayments, formatPrivateTransaction, formatPublicTransaction } = require("./privacy-helpers");
 const MONAD_CONFIG = require("./config/monad");
+const demoRoutes = require("./demo-routes");
 
 const app = express();
 app.use(cors());
@@ -16,6 +17,7 @@ app.use(express.json());
 app.use("/api/agents", agentRoutes);
 app.use("/api/funding", fundingRoutes);
 app.use("/api/payments", paymentRoutes);
+app.use(demoRoutes);
 
 // The main compliance endpoint — this is what your x402 agent calls
 app.post("/api/compliance/process", async (req, res) => {
