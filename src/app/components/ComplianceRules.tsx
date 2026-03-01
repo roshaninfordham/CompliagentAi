@@ -12,17 +12,22 @@ import {
   Clock,
   X,
   Check,
+  Fingerprint,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useMonadContracts } from "../../hooks/useMonadContracts.js";
 import { complianceRules, vendorAllowlist, type ComplianceRule } from "./mock-data";
 
-const ruleTypeConfig = {
+const ruleTypeConfig: Record<string, { icon: React.ComponentType<any>; color: string; label: string }> = {
   budget_cap: { icon: DollarSign, color: "#7C3AED", label: "Budget Cap" },
   vendor_allowlist: { icon: Users, color: "#3b82f6", label: "Vendor Allowlist" },
   aml_threshold: { icon: AlertTriangle, color: "#ef4444", label: "AML Threshold" },
   rate_limit: { icon: Clock, color: "#f59e0b", label: "Rate Limit" },
+  kyc_check: { icon: Fingerprint, color: "#06b6d4", label: "KYC Check" },
 };
+
+// Safe fallback for any unknown rule types from on-chain data
+const defaultConfig = { icon: ShieldCheck, color: "#6b7280", label: "Custom Rule" };
 
 export function ComplianceRules() {
   const [rules, setRules] = useState<ComplianceRule[]>(complianceRules);
@@ -161,11 +166,10 @@ export function ComplianceRules() {
       <div className="flex gap-1 bg-card border border-border rounded-lg p-1 w-fit">
         <button
           onClick={() => setActiveTab("rules")}
-          className={`px-4 py-2 rounded-md text-[13px] transition-colors ${
-            activeTab === "rules"
+          className={`px-4 py-2 rounded-md text-[13px] transition-colors ${activeTab === "rules"
               ? "bg-[#7C3AED] text-white"
               : "text-muted-foreground hover:text-foreground"
-          }`}
+            }`}
         >
           <span className="flex items-center gap-2">
             <ShieldCheck className="w-4 h-4" />
@@ -174,11 +178,10 @@ export function ComplianceRules() {
         </button>
         <button
           onClick={() => setActiveTab("vendors")}
-          className={`px-4 py-2 rounded-md text-[13px] transition-colors ${
-            activeTab === "vendors"
+          className={`px-4 py-2 rounded-md text-[13px] transition-colors ${activeTab === "vendors"
               ? "bg-[#7C3AED] text-white"
               : "text-muted-foreground hover:text-foreground"
-          }`}
+            }`}
         >
           <span className="flex items-center gap-2">
             <Users className="w-4 h-4" />
@@ -191,14 +194,13 @@ export function ComplianceRules() {
         /* Rules List */
         <div className="space-y-3">
           {rules.map((rule) => {
-            const config = ruleTypeConfig[rule.type];
+            const config = ruleTypeConfig[rule.type] || defaultConfig;
             const Icon = config.icon;
             return (
               <div
                 key={rule.id}
-                className={`bg-card rounded-xl border border-border p-5 transition-opacity ${
-                  !rule.enabled ? "opacity-50" : ""
-                }`}
+                className={`bg-card rounded-xl border border-border p-5 transition-opacity ${!rule.enabled ? "opacity-50" : ""
+                  }`}
               >
                 <div className="flex items-start justify-between">
                   <div className="flex items-start gap-4">

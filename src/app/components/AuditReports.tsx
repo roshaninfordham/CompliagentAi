@@ -89,7 +89,7 @@ export function AuditReports() {
 
   const handleShareWithAuditor = (report: AuditReportWithTx) => {
     const url = report.txHash
-      ? `https://testnet.monadexplorer.com/tx/${report.txHash}`
+      ? `https://testnet.monadvision.com/tx/${report.txHash}`
       : report.proofHash;
     navigator.clipboard.writeText(url);
     toast.success(
@@ -237,13 +237,12 @@ export function AuditReports() {
                 <div className="text-right">
                   <div className="flex items-center gap-2">
                     <span
-                      className={`text-[13px] ${
-                        report.passRate >= 99
+                      className={`text-[13px] ${report.passRate >= 99
                           ? "text-emerald-600"
                           : report.passRate >= 98
-                          ? "text-[#7C3AED]"
-                          : "text-amber-600"
-                      }`}
+                            ? "text-[#7C3AED]"
+                            : "text-amber-600"
+                        }`}
                       style={{ fontFamily: "'Roboto Mono', monospace" }}
                     >
                       {report.passRate}% pass rate

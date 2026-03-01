@@ -30,7 +30,7 @@ export interface Transaction {
 export interface ComplianceRule {
   id: string;
   name: string;
-  type: "budget_cap" | "vendor_allowlist" | "aml_threshold" | "rate_limit";
+  type: "budget_cap" | "vendor_allowlist" | "aml_threshold" | "rate_limit" | "kyc_check" | string;
   value: string;
   enabled: boolean;
   updatedAt: Date;

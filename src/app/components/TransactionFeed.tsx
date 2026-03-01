@@ -157,7 +157,9 @@ export function TransactionFeed() {
       tx.vendor.toLowerCase().includes(searchQuery.toLowerCase()) ||
       tx.txHash.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesFilter = statusFilter === "all" || tx.status === statusFilter;
-    return matchesSearch && matchesFilter;
+    // In on-chain mode, only show on-chain transactions
+    const matchesMode = feedMode === "simulated" || (tx as FeedTransaction).onChain === true;
+    return matchesSearch && matchesFilter && matchesMode;
   });
 
   const formatTime = (date: Date) => {
@@ -179,11 +181,10 @@ export function TransactionFeed() {
           </p>
           <button
             onClick={() => setIsLive(!isLive)}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] transition-colors ${
-              isLive
-                ? "bg-emerald-50 text-emerald-700"
-                : "bg-muted text-muted-foreground"
-            }`}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] transition-colors ${isLive
+              ? "bg-emerald-50 text-emerald-700"
+              : "bg-muted text-muted-foreground"
+              }`}
           >
             <span className={`w-1.5 h-1.5 rounded-full ${isLive ? "bg-emerald-500 animate-pulse" : "bg-gray-400"}`} />
             {isLive ? "Live" : "Paused"}
@@ -192,21 +193,19 @@ export function TransactionFeed() {
           <div className="flex gap-0.5 bg-muted border border-border rounded-full p-0.5">
             <button
               onClick={() => setFeedMode("simulated")}
-              className={`px-2.5 py-1 rounded-full text-[11px] transition-colors ${
-                feedMode === "simulated"
-                  ? "bg-amber-100 text-amber-800"
-                  : "text-muted-foreground hover:text-foreground"
-              }`}
+              className={`px-2.5 py-1 rounded-full text-[11px] transition-colors ${feedMode === "simulated"
+                ? "bg-amber-100 text-amber-800"
+                : "text-muted-foreground hover:text-foreground"
+                }`}
             >
               Simulated
             </button>
             <button
               onClick={() => setFeedMode("onchain")}
-              className={`px-2.5 py-1 rounded-full text-[11px] transition-colors ${
-                feedMode === "onchain"
-                  ? "bg-emerald-100 text-emerald-800"
-                  : "text-muted-foreground hover:text-foreground"
-              }`}
+              className={`px-2.5 py-1 rounded-full text-[11px] transition-colors ${feedMode === "onchain"
+                ? "bg-emerald-100 text-emerald-800"
+                : "text-muted-foreground hover:text-foreground"
+                }`}
             >
               On-Chain
             </button>
@@ -242,11 +241,10 @@ export function TransactionFeed() {
             <button
               key={status}
               onClick={() => setStatusFilter(status)}
-              className={`px-3 py-1.5 rounded-md text-[12px] transition-colors ${
-                statusFilter === status
-                  ? "bg-[#7C3AED] text-white"
-                  : "text-muted-foreground hover:text-foreground"
-              }`}
+              className={`px-3 py-1.5 rounded-md text-[12px] transition-colors ${statusFilter === status
+                ? "bg-[#7C3AED] text-white"
+                : "text-muted-foreground hover:text-foreground"
+                }`}
             >
               {status.charAt(0).toUpperCase() + status.slice(1)}
             </button>
@@ -286,63 +284,84 @@ export function TransactionFeed() {
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
-            {filteredTx.map((tx) => (
-              <tr
-                key={tx.id}
-                className="hover:bg-muted/30 transition-colors cursor-pointer"
-                onClick={() => setSelectedTx(tx)}
-              >
-                <td className="px-5 py-3.5">
-                  <div className="flex items-center gap-2">
-                    <p className="text-[13px] text-foreground">{tx.agentName}</p>
-                    {(tx as FeedTransaction).onChain && <OnChainBadge />}
+            {filteredTx.length === 0 ? (
+              <tr>
+                <td colSpan={8} className="px-5 py-12 text-center">
+                  <div className="flex flex-col items-center gap-3">
+                    <ShieldCheck className="w-10 h-10 text-muted-foreground/30" />
+                    <p className="text-[14px] text-muted-foreground">
+                      {feedMode === "onchain"
+                        ? "No on-chain events captured yet"
+                        : "No transactions match your filters"}
+                    </p>
+                    {feedMode === "onchain" && (
+                      <p className="text-[12px] text-muted-foreground/70 max-w-sm">
+                        Run the <strong>Live Demo</strong> to generate real ComplianceStamped events on Monad Testnet.
+                        On-chain events will appear here automatically.
+                      </p>
+                    )}
                   </div>
                 </td>
-                <td className="px-5 py-3.5">
-                  <p className="text-[13px] text-muted-foreground">{tx.vendor}</p>
-                </td>
-                <td className="px-5 py-3.5">
-                  <span className="text-[13px] text-foreground" style={{ fontFamily: "'Roboto Mono', monospace" }}>
-                    {tx.shielded ? (
-                      <span className="text-[#7C3AED]">****</span>
-                    ) : (
-                      `$${tx.amount.toLocaleString()}`
-                    )}
-                  </span>
-                </td>
-                <td className="px-5 py-3.5">
-                  {tx.shielded ? (
-                    <span className="inline-flex items-center gap-1 text-[11px] text-[#7C3AED]">
-                      <EyeOff className="w-3 h-3" />
-                      Shielded
-                    </span>
-                  ) : (
-                    <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground">
-                      <Eye className="w-3 h-3" />
-                      Public
-                    </span>
-                  )}
-                </td>
-                <td className="px-5 py-3.5">
-                  <ComplianceBadge status={tx.status} />
-                </td>
-                <td className="px-5 py-3.5">
-                  <span className="text-[12px] text-muted-foreground" style={{ fontFamily: "'Roboto Mono', monospace" }}>
-                    {tx.txHash}
-                  </span>
-                </td>
-                <td className="px-5 py-3.5">
-                  <span className="text-[12px] text-muted-foreground">
-                    {formatTime(tx.timestamp)}
-                  </span>
-                </td>
-                <td className="px-5 py-3.5 text-right">
-                  <button className="p-1.5 rounded-md hover:bg-muted transition-colors">
-                    <ExternalLink className="w-4 h-4 text-muted-foreground" />
-                  </button>
-                </td>
               </tr>
-            ))}
+            ) : (
+              filteredTx.map((tx) => (
+                <tr
+                  key={tx.id}
+                  className="hover:bg-muted/30 transition-colors cursor-pointer"
+                  onClick={() => setSelectedTx(tx)}
+                >
+                  <td className="px-5 py-3.5">
+                    <div className="flex items-center gap-2">
+                      <p className="text-[13px] text-foreground">{tx.agentName}</p>
+                      {(tx as FeedTransaction).onChain && <OnChainBadge />}
+                    </div>
+                  </td>
+                  <td className="px-5 py-3.5">
+                    <p className="text-[13px] text-muted-foreground">{tx.vendor}</p>
+                  </td>
+                  <td className="px-5 py-3.5">
+                    <span className="text-[13px] text-foreground" style={{ fontFamily: "'Roboto Mono', monospace" }}>
+                      {tx.shielded ? (
+                        <span className="text-[#7C3AED]">****</span>
+                      ) : (
+                        `$${tx.amount.toLocaleString()}`
+                      )}
+                    </span>
+                  </td>
+                  <td className="px-5 py-3.5">
+                    {tx.shielded ? (
+                      <span className="inline-flex items-center gap-1 text-[11px] text-[#7C3AED]">
+                        <EyeOff className="w-3 h-3" />
+                        Shielded
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground">
+                        <Eye className="w-3 h-3" />
+                        Public
+                      </span>
+                    )}
+                  </td>
+                  <td className="px-5 py-3.5">
+                    <ComplianceBadge status={tx.status} />
+                  </td>
+                  <td className="px-5 py-3.5">
+                    <span className="text-[12px] text-muted-foreground" style={{ fontFamily: "'Roboto Mono', monospace" }}>
+                      {tx.txHash}
+                    </span>
+                  </td>
+                  <td className="px-5 py-3.5">
+                    <span className="text-[12px] text-muted-foreground">
+                      {formatTime(tx.timestamp)}
+                    </span>
+                  </td>
+                  <td className="px-5 py-3.5 text-right">
+                    <button className="p-1.5 rounded-md hover:bg-muted transition-colors">
+                      <ExternalLink className="w-4 h-4 text-muted-foreground" />
+                    </button>
+                  </td>
+                </tr>
+              ))
+            )}
           </tbody>
         </table>
       </div>
