@@ -248,8 +248,8 @@ export function AgentDemo() {
     setStepTimings([]);
     setTotalTime(0);
     setIsOfflineMode(false);
-    setSteps((prev) =>
-      prev.map((s) => ({ ...s, status: "idle" as const, detail: undefined })),
+    setSteps((prev: DemoStep[]) =>
+      prev.map((s: DemoStep) => ({ ...s, status: "idle" as const, detail: undefined })),
     );
     setTimeout(() => {
       abortRef.current = false;
@@ -270,8 +270,8 @@ export function AgentDemo() {
     for (let i = 0; i < currentSteps.length; i++) {
       if (abortRef.current) return;
       setCurrentStep(i);
-      setSteps((prev) =>
-        prev.map((s, idx) =>
+      setSteps((prev: DemoStep[]) =>
+        prev.map((s: DemoStep, idx: number) =>
           idx === i ? { ...s, status: "running" as const } : s,
         ),
       );
@@ -300,8 +300,8 @@ export function AgentDemo() {
         setTxHash(`0x${Math.random().toString(16).slice(2, 14)}`);
         setBlockNumber(16000000 + Math.floor(Math.random() * 10000));
       }
-      setSteps((prev) =>
-        prev.map((s, idx) =>
+      setSteps((prev: DemoStep[]) =>
+        prev.map((s: DemoStep, idx: number) =>
           idx === i ? { ...s, status: "success" as const } : s,
         ),
       );
@@ -363,8 +363,8 @@ export function AgentDemo() {
             ? JSON.stringify(data.detail)
             : data.detail;
 
-        setSteps((prev) => {
-          const stepIndex = prev.findIndex((s) => s.id === mappedStepId);
+        setSteps((prev: DemoStep[]) => {
+          const stepIndex = prev.findIndex((s: DemoStep) => s.id === mappedStepId);
           if (stepIndex === -1) return prev;
           const updated = [...prev];
           updated[stepIndex] = {
@@ -377,8 +377,8 @@ export function AgentDemo() {
         });
 
         if (uiStatus === "success" && data.timing != null) {
-          setStepTimings((prev) => {
-            if (prev.some((t) => t.step === mappedStepId)) return prev;
+          setStepTimings((prev: StepTiming[]) => {
+            if (prev.some((t: StepTiming) => t.step === mappedStepId)) return prev;
             return [...prev, { step: mappedStepId, durationMs: data.timing! }];
           });
         }
@@ -418,8 +418,8 @@ export function AgentDemo() {
       if (result.blockNumber) setBlockNumber(result.blockNumber);
 
       // Mark all steps success
-      setSteps((prev) =>
-        prev.map((s) => ({ ...s, status: "success" as const })),
+      setSteps((prev: DemoStep[]) =>
+        prev.map((s: DemoStep) => ({ ...s, status: "success" as const })),
       );
       const elapsed = Date.now() - startTime;
       setTotalTime(elapsed);
@@ -814,7 +814,7 @@ export function AgentDemo() {
         </div>
 
         <div>
-          {steps.map((step, idx) => {
+          {steps.map((step: DemoStep, idx: number) => {
             const Icon = step.icon;
             const isActive = idx === currentStep && isRunning;
             const timing = getStepTiming(step.id);
@@ -1441,10 +1441,10 @@ export function AgentDemo() {
                     gap: "6px",
                   }}
                 >
-                  {stepTimings.map((timing) => {
-                    const stepDef = steps.find((s) => s.id === timing.step);
+                  {stepTimings.map((timing: StepTiming) => {
+                    const stepDef = steps.find((s: DemoStep) => s.id === timing.step);
                     const maxMs = Math.max(
-                      ...stepTimings.map((t) => t.durationMs),
+                      ...stepTimings.map((t: StepTiming) => t.durationMs),
                       1,
                     );
                     const widthPct = Math.max(

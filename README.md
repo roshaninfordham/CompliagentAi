@@ -710,6 +710,18 @@ Monad's public testnet RPC allows ~25 requests/second. Our rate limiter uses a s
 
 ---
 
+## ☁️ Deployment (Vercel)
+
+The frontend and backend have been unified for seamless deployment on **Vercel**.
+
+- **Frontend**: Standard Vite React build deployed on Vercel.
+- **Backend (API)**: The traditional Express routes in `/backend` are ported to **Serverless Functions** inside the `/api` directory.
+- **Serverless Architecture**: All endpoints (like `/api/demo/run-x402`, `/api/agents/create`, `/api/monad/status`) run as standalone serverless functions, leveraging Vercel's `vercel.json` for routing and maximum duration configurations.
+
+This architecture ensures high availability, zero-maintenance scaling, and seamless integration between the React UI and the Node.js compliance engine.
+
+---
+
 ## 🤝 Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
